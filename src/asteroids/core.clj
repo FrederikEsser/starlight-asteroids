@@ -16,11 +16,13 @@
 (def height 100)
 (def point-size 8)
 (def ship-size 1.5)
+(def turn-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 1.5)
-(def shot-millis 250)
+(def shot-millis 200)
+(def asteroid-max-speed 1)
+(def asteroid-max-rotation-speed 5)
 (def turn-millis 20)
-(def turn-speed 4)
 (def actions {
               (int \A) {:rotation (- turn-speed)}
               (int \D) {:rotation turn-speed}
@@ -149,6 +151,29 @@
          shot-speed (vec+vec speed (num*vec shot-speed dir-vec))]
      (create-shot shot-pos direction shot-speed))))
 
+(defn create-asteroid
+  ([size pos]
+   (let [direction (rand (* 2 (Math/PI)))
+         speed (num*vec (rand asteroid-max-speed) (rotate-vec direction [0 1]))
+         rotation-speed (rand asteroid-max-rotation-speed)]
+     {:type           :asteroid
+
+      :size           size
+      :shape          [[-1.0 -1.0] [1.0 -1.0] [1.0 1.0] [-1.0 1.0]]
+      :color          (Color. 250 240 20)
+
+      :position       pos
+      :speed          speed
+      :acceleration   0
+
+      :direction      direction
+      :rotation-speed rotation-speed
+      }))
+  ([size]
+   (let [x (rand width)
+         y (rand height)]
+     (create-asteroid size [x y]))))
+
 (defn out-of-bounds? [{[x y] :position size :size}]
   (or
     (< x (- size))
@@ -194,6 +219,14 @@
   (let [position (vec+vec speed position)]
     (assoc shot :position position)))
 
+(defmethod move :asteroid [{:keys [direction rotation-speed position speed] :as asteroid}]
+  (let [direction (+ direction (* rotation-speed turn-millis 0.001))
+        [x y] (vec+vec speed position)
+        position [(mod x width) (mod y height)]]
+    (assoc asteroid :direction direction
+                    :position position
+                    )))
+
 ; Accelerating shots - not used right now
 #_(defmethod move :shot [{:keys [position speed direction acceleration] :as shot}]
   (let [speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
@@ -213,10 +246,11 @@
 ; ----------------------------------------------------------
 ; mutable model
 ; ----------------------------------------------------------
-(defn update-positions! [ship]
+(defn update-positions! [ship asteroid]
   (dosync
     (alter ship shoot)
-    (alter ship move))
+    (alter ship move)
+    (alter asteroid move))
   nil)
 
 (defn do-action!
@@ -229,8 +263,10 @@
    (do-action! ship action 1))
   )
 
-(defn reset-game! [ship]
-  (dosync (ref-set ship (create-ship)))
+(defn reset-game! [ship asteroid]
+  (dosync
+    (ref-set ship (create-ship))
+    (ref-set asteroid (create-asteroid 2)))
   nil)
 
 ; ----------------------------------------------------------
@@ -238,11 +274,19 @@
 ; ----------------------------------------------------------
 
 (defn draw-polygon [graphics polygon color]
-  (doto graphics
-    (.setColor color)
-    (.fillPolygon (let [jpolygon (new Polygon)]
-                    (doseq [[x y] polygon] (. jpolygon (addPoint x y)))
-                    jpolygon)))
+  (let [jpolygon (new Polygon)]
+    (doseq [[x y] polygon] (. jpolygon (addPoint x y)))
+    (doto graphics
+      (.setColor color)
+      (.drawPolygon jpolygon)))
+  nil)
+
+(defn fill-polygon [graphics polygon color]
+  (let [jpolygon (new Polygon)]
+    (doseq [[x y] polygon] (. jpolygon (addPoint x y)))
+    (doto graphics
+      (.setColor color)
+      (.fillPolygon jpolygon)))
   nil)
 
 (defmulti paint (fn [_ object] (:type object)))
@@ -253,11 +297,16 @@
   (let [transformation (get-transformation-matrix ship point-size)
         polygon (polygon-to-screen shape transformation)
         cockpit-polygon (polygon-to-screen cockpit-shape transformation)]
-    (draw-polygon g polygon color)
-    (draw-polygon g cockpit-polygon cockpit-color)))
+    (fill-polygon g polygon color)
+    (fill-polygon g cockpit-polygon cockpit-color)))
 
-(defmethod paint :shot [g {:keys [shape color] :as shot}]
-  (let [transformation (get-transformation-matrix shot point-size)
+(defmethod paint :shot [g {:keys [shape color] :as object}]
+  (let [transformation (get-transformation-matrix object point-size)
+        polygon (polygon-to-screen shape transformation)]
+    (fill-polygon g polygon color)))
+
+(defmethod paint :asteroid [g {:keys [shape color] :as object}]
+  (let [transformation (get-transformation-matrix object point-size)
         polygon (polygon-to-screen shape transformation)]
     (draw-polygon g polygon color)))
 
@@ -265,18 +314,19 @@
 ; game
 ; ----------------------------------------------------------
 
-(defn game-panel [frame ship]
+(defn game-panel [frame ship asteroid]
   (proxy [JPanel ActionListener KeyListener] []
     (paintComponent [g]                                     ; <label id="code.game-panel.paintComponent"/>
       (proxy-super paintComponent g)
-      (paint g @ship))
+      (paint g @ship)
+      (paint g @asteroid))
     (actionPerformed [e]                                    ; <label id="code.game-panel.actionPerformed"/>
-      (update-positions! ship)
+      (update-positions! ship asteroid)
       (when (lose? @ship)
-        (reset-game! ship)
+        (reset-game! ship asteroid)
         (JOptionPane/showMessageDialog frame "You lose!"))
       (when (win? @ship)
-        (reset-game! ship)
+        (reset-game! ship asteroid)
         (JOptionPane/showMessageDialog frame "You win!"))
       (.repaint this))
     (keyPressed [e]
@@ -290,8 +340,9 @@
 
 (defn game []
   (let [ship (ref (create-ship))
+        asteroid (ref (create-asteroid 2))
         frame (JFrame. "Asteroids")
-        panel (game-panel frame ship)
+        panel (game-panel frame ship asteroid)
         timer (Timer. turn-millis panel)]
     (doto panel                                             ; <label id="code.game.panel"/>
       (.setFocusable true)
