@@ -117,7 +117,7 @@
    :cockpit-color          (Color. 0 0 80)
 
    :shots                  []
-   :shoting                false
+   :shooting?              false
    :millis-since-last-shot shot-millis
 
    :position               [(/ width 2) (/ height 2)]
@@ -166,34 +166,40 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
-(defn shoot [{:keys [shooting shots millis-since-last-shot] :as ship}]
+(defn shoot [{:keys [shooting? shots millis-since-last-shot] :as ship}]
   #_(prn "shoot" position size direction speed)
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
-        shoots? (and shooting (>= millis-since-last-shot shot-millis))
+        shoots? (and shooting? (>= millis-since-last-shot shot-millis))
         shots (if shoots? (conj shots (create-shot ship)) shots)]
     (assoc ship :millis-since-last-shot (if shoots? 0 millis-since-last-shot)
                 :shots shots))
   )
+
 (defmulti move (fn [object & _] (:type object)))
 
 (defmethod move :ship [{:keys [direction rotation-speed position speed acceleration shots] :as ship}]
-  (let [new-dir (+ direction (* rotation-speed turn-millis 0.001))
-        new-speed (vec+vec speed (rotate-vec new-dir [0 (* acceleration turn-millis 0.001)]))
-        new-pos (vec+vec new-speed position)
-        moved-shots (->> shots
-                         (filter #(not (out-of-bounds? %)))
-                         (map move))]
-    (assoc ship :direction new-dir
-                :speed new-speed
-                :position new-pos
-                :shots moved-shots
+  (let [direction (+ direction (* rotation-speed turn-millis 0.001))
+        speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
+        position (vec+vec speed position)
+        shots (->> shots
+                   (filter #(not (out-of-bounds? %)))
+                   (map move))]
+    (assoc ship :direction direction
+                :speed speed
+                :position position
+                :shots shots
                 )))
 
-(defmethod move :shot [{:keys [direction position speed acceleration] :as shot}]
-  (let [new-speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
-        new-pos (vec+vec new-speed position)]
-    (assoc shot :speed new-speed
-                :position new-pos)))
+(defmethod move :shot [{:keys [position speed] :as shot}]
+  (let [position (vec+vec speed position)]
+    (assoc shot :position position)))
+
+; Accelerating shots - not used right now
+#_(defmethod move :shot [{:keys [position speed direction acceleration] :as shot}]
+  (let [speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
+        position (vec+vec speed position)]
+    (assoc shot :speed speed
+                :position position)))
 
 (defn turn [{:keys [rotation-speed] :as ship} rot]
   (assoc ship :rotation-speed (+ rotation-speed rot)))
@@ -201,8 +207,8 @@
 (defn accelerate [{:keys [acceleration] :as ship} acc]
   (assoc ship :acceleration (+ acceleration acc)))
 
-(defn toggle-shooting [ship s]
-  (assoc ship :shooting s))
+(defn toggle-shooting [ship do-shoot?]
+  (assoc ship :shooting? do-shoot?))
 
 ; ----------------------------------------------------------
 ; mutable model
@@ -275,12 +281,12 @@
       (.repaint this))
     (keyPressed [e]
       (do-action! ship (actions (.getKeyCode e))))
-    (getPreferredSize []
-      (Dimension. (* (inc width) point-size)
-                  (* (inc height) point-size)))
     (keyReleased [e]
       (do-action! ship (actions (.getKeyCode e)) -1))
-    (keyTyped [e])))
+    (keyTyped [e])
+    (getPreferredSize []
+      (Dimension. (* (inc width) point-size)
+                  (* (inc height) point-size)))))
 
 (defn game []
   (let [ship (ref (create-ship))
