@@ -19,8 +19,12 @@
 (def turn-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 1.5)
-(def shot-millis 200)
-(def asteroid-max-speed 1)
+(def shot-millis 400)
+(def asteroids-start-number 6)
+(def asteroid-start-size 4)
+(def asteroid-size-variance 0.1)
+(def asteroid-jaggedness 0.3)
+(def asteroid-max-speed 0.6)
 (def asteroid-max-rotation-speed 5)
 (def turn-millis 20)
 (def actions {
@@ -31,6 +35,15 @@
               })
 
 ; END: constants
+
+(defn random [from to]
+  (let [range (- to from)]
+    (+ from (rand range))))
+
+(defn vary [variance n]
+  (let [from (* n (- 1 variance))
+        to (* n (+ 1 variance))]
+    (random from to)))
 
 ; transformation math:
 
@@ -99,7 +112,7 @@
   )
 
 (defn polygon-to-screen [pol mat]
-  (let [f (fn [v] (->> (conj v 1)
+  (let [f (fn [v] (->> (conj (vec v) 1)
                        (mat*vec mat)
                        (take 2)
                        (round)))]
@@ -155,11 +168,17 @@
   ([size pos]
    (let [direction (rand (* 2 (Math/PI)))
          speed (num*vec (rand asteroid-max-speed) (rotate-vec direction [0 1]))
-         rotation-speed (rand asteroid-max-rotation-speed)]
+         rotation-speed (rand asteroid-max-rotation-speed)
+         num-points (Math/round (+ size 3.0))
+         make-point (fn [n]
+                      (let [angle (* 2 (Math/PI) (/ n num-points))
+                            length (random (- 1 asteroid-jaggedness) (+ 1 (/ asteroid-jaggedness 2)))]
+                        (rotate-vec angle [0 length])))
+         shape (map make-point (range num-points))]
      {:type           :asteroid
 
-      :size           size
-      :shape          [[-1.0 -1.0] [1.0 -1.0] [1.0 1.0] [-1.0 1.0]]
+      :size           (vary asteroid-size-variance size)
+      :shape          shape
       :color          (Color. 250 240 20)
 
       :position       pos
@@ -173,6 +192,10 @@
    (let [x (rand width)
          y (rand height)]
      (create-asteroid size [x y]))))
+
+(defn create-asteroids [num size]
+  (map create-asteroid (repeat num size))
+  #_(repeat num (create-asteroid size)))
 
 (defn out-of-bounds? [{[x y] :position size :size}]
   (or
@@ -205,7 +228,8 @@
 (defmethod move :ship [{:keys [direction rotation-speed position speed acceleration shots] :as ship}]
   (let [direction (+ direction (* rotation-speed turn-millis 0.001))
         speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
-        position (vec+vec speed position)
+        [x y] (vec+vec speed position)
+        position [(mod x width) (mod y height)]
         shots (->> shots
                    (filter #(not (out-of-bounds? %)))
                    (map move))]
@@ -246,12 +270,12 @@
 ; ----------------------------------------------------------
 ; mutable model
 ; ----------------------------------------------------------
-(defn update-positions! [ship asteroid]
+(defn update-positions! [ship asteroids]
   (dosync
     (alter ship shoot)
     (alter ship move)
-    (alter asteroid move))
-  nil)
+    (alter asteroids (partial map move))
+    nil))
 
 (defn do-action!
   ([ship {:keys [rotation acceleration shoot] :as action} modifier]
@@ -263,10 +287,10 @@
    (do-action! ship action 1))
   )
 
-(defn reset-game! [ship asteroid]
+(defn reset-game! [ship asteroids]
   (dosync
     (ref-set ship (create-ship))
-    (ref-set asteroid (create-asteroid 2)))
+    (ref-set asteroids (create-asteroids asteroids-start-number asteroid-start-size)))
   nil)
 
 ; ----------------------------------------------------------
@@ -314,19 +338,20 @@
 ; game
 ; ----------------------------------------------------------
 
-(defn game-panel [frame ship asteroid]
+(defn game-panel [frame ship asteroids]
   (proxy [JPanel ActionListener KeyListener] []
     (paintComponent [g]                                     ; <label id="code.game-panel.paintComponent"/>
       (proxy-super paintComponent g)
       (paint g @ship)
-      (paint g @asteroid))
+      (doseq [asteroid @asteroids]
+        (paint g asteroid)))
     (actionPerformed [e]                                    ; <label id="code.game-panel.actionPerformed"/>
-      (update-positions! ship asteroid)
+      (update-positions! ship asteroids)
       (when (lose? @ship)
-        (reset-game! ship asteroid)
+        (reset-game! ship asteroids)
         (JOptionPane/showMessageDialog frame "You lose!"))
       (when (win? @ship)
-        (reset-game! ship asteroid)
+        (reset-game! ship asteroids)
         (JOptionPane/showMessageDialog frame "You win!"))
       (.repaint this))
     (keyPressed [e]
@@ -340,9 +365,9 @@
 
 (defn game []
   (let [ship (ref (create-ship))
-        asteroid (ref (create-asteroid 2))
+        asteroids (ref (create-asteroids asteroids-start-number asteroid-start-size))
         frame (JFrame. "Asteroids")
-        panel (game-panel frame ship asteroid)
+        panel (game-panel frame ship asteroids)
         timer (Timer. turn-millis panel)]
     (doto panel                                             ; <label id="code.game.panel"/>
       (.setFocusable true)
