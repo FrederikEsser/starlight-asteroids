@@ -12,10 +12,13 @@
 ; functional model
 ; ----------------------------------------------------------
 ; START: constants
+(def sqrt3 (Math/sqrt 3.0))
+
 (def width 120)
 (def height 100)
 (def point-size 8)
 (def ship-size 1.5)
+(def ship-life 3)
 (def turn-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 1.5)
@@ -141,6 +144,8 @@
 
    :direction              0
    :rotation-speed         0
+
+   :life                   ship-life
    })
 
 (defn create-shot
@@ -205,10 +210,87 @@
     (> y (+ height size))
     ))
 
-(def win? (constantly false))
+(defn collide? [{size1 :size [x1 y1] :position} {size2 :size [x2 y2] :position}]
+  (let [distance (fn [a b max]
+                   (let [d (Math/abs (- a b))]
+                     (if (< d (/ max 2)) d (- max d))))
+        x (distance x1 x2 width)
+        y (distance y1 y2 height)
+        size (+ size1 size2)
+        square #(* % %)]
+    (<= (+ (square x) (square y)) (square size))))
 
-(defn lose? [ship]
-  (out-of-bounds? ship))
+(defmulti check-collision
+          (fn [obj1 obj2]
+            (cond
+              (and (map? obj1) (map? obj2)) :map-map
+              (and (map? obj1) (sequential? obj2)) :map-seq
+              (and (sequential? obj1) (sequential? obj2)) :seq-seq)))
+
+(defmethod check-collision :map-map [obj1 obj2]
+  (if (collide? obj1 obj2)
+    [(assoc obj1 :hit? true) (assoc obj2 :hit? true)]
+    [obj1 obj2]))
+
+(defmethod check-collision :map-seq [obj1 coll]
+  (loop [obj1 obj1, coll coll, coll-result []]
+    (if (empty? coll)
+      [obj1 coll-result]
+      (let [[obj1 obj2] (check-collision obj1 (first coll))]
+        (recur obj1 (rest coll) (conj coll-result obj2)))
+      )))
+
+(defmethod check-collision :seq-seq [coll1 coll2]
+  (loop [coll1 coll1, coll2 coll2, coll1-result []]
+    (if (empty? coll1)
+      [coll1-result coll2]
+      (let [[obj1 coll2] (check-collision (first coll1) coll2)]
+        (recur (rest coll1) coll2 (conj coll1-result obj1)))
+      )))
+
+(defmulti handle-collision (fn [object] (:type object)))
+
+(defmethod handle-collision :ship [{:keys [hit? life] :as ship}]
+  (if hit?
+    (assoc ship :life (dec life)
+                :hit? false)
+    ship))
+
+(defmethod handle-collision :shot [{:keys [hit?] :as shot}]
+  (if hit?
+    nil
+    shot))
+
+(defmethod handle-collision :asteroid [{:keys [hit? size position speed] :as asteroid}]
+  (let [fragment-size (/ size sqrt3)]
+    (if hit?
+      (if (< fragment-size asteroid-min-size)
+        nil
+        (create-asteroids 3 (/ size sqrt3) position speed))
+      asteroid)))
+
+(defn resolve-all-collision [{shots :shots :as ship} asteroids]
+  (let [[ship asteroids] (check-collision ship asteroids)
+        [shots asteroids] (check-collision shots asteroids)
+        ship (handle-collision ship)
+        shots (->> shots
+                   (map handle-collision)
+                   flatten
+                   (filter (comp not nil?)))
+        asteroids (->> asteroids
+                       (map handle-collision)
+                       flatten
+                       (filter (comp not nil?)))]
+    [(assoc ship :shots shots) asteroids]))
+
+(def win? (constantly false))
+(def lose? (constantly false))
+
+(defn win? [asteroids]
+  (empty? asteroids))
+
+(defn lose? [{life :life}]
+  (<= life 0))
 
 ; ----------------------------------------------------------------------
 ; Actions
@@ -277,6 +359,12 @@
     (alter asteroids (partial map move))
     nil))
 
+(defn resolve-collision! [ship asteroids]
+  (dosync
+    (let [[ship* asteroids*] (resolve-all-collision @ship @asteroids)]
+      (ref-set ship ship*)
+      (ref-set asteroids asteroids*))))
+
 (defn do-action!
   ([ship {:keys [rotation acceleration shoot] :as action} modifier]
    (when rotation (dosync (alter ship turn (* modifier rotation))))
@@ -287,10 +375,12 @@
    (do-action! ship action 1))
   )
 
-(defn reset-game! [ship asteroids]
+(defn reset-game! [ship asteroids level increase-level?]
   (dosync
     (ref-set ship (create-ship))
-    (ref-set asteroids (create-asteroids asteroids-start-number asteroid-start-size)))
+    (when increase-level?
+      (alter level inc))
+    (ref-set asteroids (create-asteroids @level asteroid-start-size)))
   nil)
 
 ; ----------------------------------------------------------
@@ -338,7 +428,7 @@
 ; game
 ; ----------------------------------------------------------
 
-(defn game-panel [frame ship asteroids]
+(defn game-panel [frame ship asteroids level]
   (proxy [JPanel ActionListener KeyListener] []
     (paintComponent [g]                                     ; <label id="code.game-panel.paintComponent"/>
       (proxy-super paintComponent g)
@@ -347,11 +437,12 @@
         (paint g asteroid)))
     (actionPerformed [e]                                    ; <label id="code.game-panel.actionPerformed"/>
       (update-positions! ship asteroids)
+      (resolve-collision! ship asteroids)
       (when (lose? @ship)
-        (reset-game! ship asteroids)
+        (reset-game! ship asteroids level false)
         (JOptionPane/showMessageDialog frame "You lose!"))
-      (when (win? @ship)
-        (reset-game! ship asteroids)
+      (when (win? @asteroids)
+        (reset-game! ship asteroids level true)
         (JOptionPane/showMessageDialog frame "You win!"))
       (.repaint this))
     (keyPressed [e]
@@ -365,9 +456,10 @@
 
 (defn game []
   (let [ship (ref (create-ship))
+        level (ref asteroids-start-number)
         asteroids (ref (create-asteroids asteroids-start-number asteroid-start-size))
         frame (JFrame. "Asteroids")
-        panel (game-panel frame ship asteroids)
+        panel (game-panel frame ship asteroids level)
         timer (Timer. turn-millis panel)]
     (doto panel                                             ; <label id="code.game.panel"/>
       (.setFocusable true)
