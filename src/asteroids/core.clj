@@ -22,18 +22,20 @@
 (def turn-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 1.5)
-(def shot-millis 400)
-(def asteroids-start-number 6)
-(def asteroid-start-size 4)
-(def asteroid-size-variance 0.1)
-(def asteroid-jaggedness 0.3)
+(def shot-millis 200)
+(def asteroids-start-number 1)
+(def asteroid-start-size 5)
+(def asteroid-min-size 1.2)
+(def asteroid-size-variance 0.2)
+(def asteroid-jaggedness 0.6)
 (def asteroid-max-speed 0.6)
-(def asteroid-max-rotation-speed 5)
-(def turn-millis 20)
+(def asteroid-max-rotation-speed 4)
+(def turn-millis 40)
+
 (def actions {
               (int \A) {:rotation (- turn-speed)}
               (int \D) {:rotation turn-speed}
-              (int \W) {:acceleration 0.7}
+              (int \W) {:acceleration 1}
               (int \K) {:shoot true}
               })
 
@@ -170,9 +172,11 @@
      (create-shot shot-pos direction shot-speed))))
 
 (defn create-asteroid
-  ([size pos]
+  ([size pos speed]
    (let [direction (rand (* 2 (Math/PI)))
-         speed (num*vec (rand asteroid-max-speed) (rotate-vec direction [0 1]))
+         dir-vec (rotate-vec direction [0 1])
+         speed (vec+vec speed (num*vec (rand asteroid-max-speed) dir-vec))
+         position (vec+vec pos (num*vec size dir-vec))
          rotation-speed (rand asteroid-max-rotation-speed)
          num-points (Math/round (+ size 3.0))
          make-point (fn [n]
@@ -186,20 +190,23 @@
       :shape          shape
       :color          (Color. 250 240 20)
 
-      :position       pos
+      :position       position
       :speed          speed
       :acceleration   0
 
       :direction      direction
       :rotation-speed rotation-speed
       }))
+  ([size pos]
+   (create-asteroid size pos [0 0]))
   ([size]
    (let [x (rand width)
          y (rand height)]
      (create-asteroid size [x y]))))
 
-(defn create-asteroids [num size]
-  (map create-asteroid (repeat num size))
+(defn create-asteroids
+  ([num size] (map create-asteroid (repeat num size)))
+  ([num size pos speed] (map create-asteroid (repeat num size) (repeat num pos) (repeat num speed)))
   #_(repeat num (create-asteroid size)))
 
 (defn out-of-bounds? [{[x y] :position size :size}]
@@ -305,7 +312,7 @@
                 :shots shots))
   )
 
-(defmulti move (fn [object & _] (:type object)))
+(defmulti move (fn [object] (:type object)))
 
 (defmethod move :ship [{:keys [direction rotation-speed position speed acceleration shots] :as ship}]
   (let [direction (+ direction (* rotation-speed turn-millis 0.001))
@@ -335,10 +342,10 @@
 
 ; Accelerating shots - not used right now
 #_(defmethod move :shot [{:keys [position speed direction acceleration] :as shot}]
-  (let [speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
-        position (vec+vec speed position)]
-    (assoc shot :speed speed
-                :position position)))
+    (let [speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
+          position (vec+vec speed position)]
+      (assoc shot :speed speed
+                  :position position)))
 
 (defn turn [{:keys [rotation-speed] :as ship} rot]
   (assoc ship :rotation-speed (+ rotation-speed rot)))
