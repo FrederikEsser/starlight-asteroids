@@ -149,6 +149,8 @@
    :rotation-speed         0
 
    :life                   ship-life
+   :life-colors            [(Color. 255 0 0) (Color. 255 80 75) (Color. 250 160 75) (Color. 160 160 150)]
+   :collidable?            false                            ; is set to true at first movement / shooting
    })
 
 (defn create-shot
@@ -157,7 +159,7 @@
 
     :size           shot-size
     :shape          [[-1.0 -5.0] [1.0 -5.0] [0.0 1.0]]
-    :color          (Color. 250 100 20)
+    :color          (Color. 250 50 10)
 
     :position       pos
     :speed          speed
@@ -165,6 +167,8 @@
 
     :direction      dir
     :rotation-speed 0
+
+    :collidable?    true
     })
   ([{:keys [position size direction speed] :as ship}]
    (let [dir-vec (rotate-vec direction [0 1])
@@ -197,6 +201,8 @@
 
       :direction      direction
       :rotation-speed rotation-speed
+
+      :collidable?    true
       }))
   ([size pos]
    (create-asteroid size pos [0 0]))
@@ -236,7 +242,9 @@
               (and (sequential? obj1) (sequential? obj2)) :seq-seq)))
 
 (defmethod check-collision :map-map [obj1 obj2]
-  (if (collide? obj1 obj2)
+  (if (and (:collidable? obj1)
+           (:collidable? obj2)
+           (collide? obj1 obj2))
     [(assoc obj1 :hit? true) (assoc obj2 :hit? true)]
     [obj1 obj2]))
 
@@ -274,7 +282,7 @@
     (if hit?
       (if (< fragment-size asteroid-min-size)
         nil
-        (create-asteroids 3 (/ size sqrt3) position speed))
+        (create-asteroids 3 fragment-size position speed))
       asteroid)))
 
 (defn resolve-all-collision [{shots :shots :as ship} asteroids]
@@ -358,10 +366,12 @@
   (assoc ship :rotation-speed (+ rotation-speed rot)))
 
 (defn accelerate [{:keys [acceleration] :as ship} acc]
-  (assoc ship :acceleration (+ acceleration acc)))
+  (assoc ship :acceleration (+ acceleration acc)
+              :collidable? true))
 
 (defn toggle-shooting [ship do-shoot?]
-  (assoc ship :shooting? do-shoot?))
+  (assoc ship :shooting? do-shoot?
+              :collidable? true))
 
 ; ----------------------------------------------------------
 ; mutable model
@@ -420,11 +430,12 @@
 
 (defmulti paint (fn [_ object] (:type object)))
 
-(defmethod paint :ship [g {:keys [shape color cockpit-shape cockpit-color shots] :as ship}]
+(defmethod paint :ship [g {:keys [shape life-colors life cockpit-shape cockpit-color shots] :as ship}]
   (doseq [shot shots]
     (paint g shot))
   (let [transformation (get-transformation-matrix ship point-size)
         polygon (polygon-to-screen shape transformation)
+        color (get life-colors life)
         cockpit-polygon (polygon-to-screen cockpit-shape transformation)]
     (fill-polygon g polygon color)
     (fill-polygon g cockpit-polygon cockpit-color)))
@@ -485,4 +496,7 @@
       (.pack)
       (.setVisible true))
     (.start timer)                                          ; <label id="code.game.timer"/>
-    {:ship ship, :timer timer}))                            ; <label id="code.game.return"/>
+    (def ship ship)
+    (def timer timer)
+    (def frame frame)
+    {:ship ship}))                                          ; <label id="code.game.return"/>
