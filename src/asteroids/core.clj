@@ -37,6 +37,7 @@
               (int \D) {:rotation turn-speed}
               (int \W) {:acceleration 1}
               (int \K) {:shoot true}
+              (int \R) {:reset true}
               })
 
 ; END: constants
@@ -303,6 +304,12 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
+(defn reset-ship [ship]
+  "Repair method while input keys f*** up at start-up"
+  (assoc ship :rotation-speed 0
+              :acceleration 0
+              :shooting? false))
+
 (defn shoot [{:keys [shooting? shots millis-since-last-shot] :as ship}]
   #_(prn "shoot" position size direction speed)
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
@@ -373,10 +380,11 @@
       (ref-set asteroids asteroids*))))
 
 (defn do-action!
-  ([ship {:keys [rotation acceleration shoot] :as action} modifier]
+  ([ship {:keys [rotation acceleration shoot reset] :as action} modifier]
    (when rotation (dosync (alter ship turn (* modifier rotation))))
    (when acceleration (dosync (alter ship accelerate (* modifier acceleration))))
    (when shoot (dosync (alter ship toggle-shooting (> modifier 0))))
+   (when reset (dosync (alter ship reset-ship)))
     #_(prn "update" dir modifier "speed:" (:rotation-speed @ship) "acceleration:" (:acceleration @ship)))
   ([ship action]
    (do-action! ship action 1))
