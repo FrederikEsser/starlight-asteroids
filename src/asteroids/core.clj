@@ -16,13 +16,13 @@
 
 (def width 120)
 (def height 100)
-(def point-size 8)
+(def point-size 8.5)
 (def ship-size 1.5)
 (def ship-life 3)
 (def turn-speed 4)
 (def shot-size (/ ship-size 10))
-(def shot-speed 1.5)
-(def shot-millis 200)
+(def shot-speed 2.5)
+(def shot-millis 400)
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
 (def asteroid-min-size 1.2)
@@ -30,6 +30,7 @@
 (def asteroid-jaggedness 0.6)
 (def asteroid-max-speed 0.6)
 (def asteroid-max-rotation-speed 4)
+(def debris-life-millis 3000)
 (def turn-millis 40)
 
 (def actions {
@@ -38,6 +39,12 @@
               (int \W) {:acceleration 1}
               (int \K) {:shoot true}
               (int \R) {:reset true}
+              (int \1) {:set-level 1}
+              (int \2) {:set-level 2}
+              (int \3) {:set-level 3}
+              (int \4) {:set-level 4}
+              (int \5) {:set-level 5}
+              (int \6) {:set-level 6}
               })
 
 ; END: constants
@@ -178,7 +185,8 @@
 
 (defn create-asteroid
   ([size pos speed]
-   (let [direction (rand (* 2 (Math/PI)))
+   (let [size (vary asteroid-size-variance size)
+         direction (rand (* 2 (Math/PI)))
          dir-vec (rotate-vec direction [0 1])
          speed (vec+vec speed (num*vec (rand asteroid-max-speed) dir-vec))
          position (vec+vec pos (num*vec size dir-vec))
@@ -188,12 +196,13 @@
                       (let [angle (* 2 (Math/PI) (/ n num-points))
                             length (random (- 1 asteroid-jaggedness) (+ 1 (/ asteroid-jaggedness 2)))]
                         (rotate-vec angle [0 length])))
-         shape (map make-point (range num-points))]
-     {:type           :asteroid
+         shape (map make-point (range num-points))
+         debris? (< size asteroid-min-size)]
+     {:type           (if debris? :debris :asteroid)
 
       :size           (vary asteroid-size-variance size)
       :shape          shape
-      :color          (Color. 250 240 20)
+      :color          (Color. 250 240 (if debris? 150 20))
 
       :position       position
       :speed          speed
@@ -202,7 +211,9 @@
       :direction      direction
       :rotation-speed rotation-speed
 
-      :collidable?    true
+      :collidable?    (not debris?)
+
+      :life-time      (if debris? debris-life-millis nil)
       }))
   ([size pos]
    (create-asteroid size pos [0 0]))
@@ -264,7 +275,10 @@
         (recur (rest coll1) coll2 (conj coll1-result obj1)))
       )))
 
-(defmulti handle-collision (fn [object] (:type object)))
+(defmulti handle-collision (fn [{type :type}]
+                             (if (some #{:ship :shot :asteroid} type)
+                               type
+                               :other)))
 
 (defmethod handle-collision :ship [{:keys [hit? life] :as ship}]
   (if hit?
@@ -280,10 +294,11 @@
 (defmethod handle-collision :asteroid [{:keys [hit? size position speed] :as asteroid}]
   (let [fragment-size (/ size sqrt3)]
     (if hit?
-      (if (< fragment-size asteroid-min-size)
-        nil
-        (create-asteroids 3 fragment-size position speed))
+      (create-asteroids 3 fragment-size position speed)
       asteroid)))
+
+(defmethod handle-collision :other [object]
+  object)
 
 (defn resolve-all-collision [{shots :shots :as ship} asteroids]
   (let [[ship asteroids] (check-collision ship asteroids)
@@ -340,8 +355,7 @@
     (assoc ship :direction direction
                 :speed speed
                 :position position
-                :shots shots
-                )))
+                :shots shots)))
 
 (defmethod move :shot [{:keys [position speed] :as shot}]
   (let [position (vec+vec speed position)]
@@ -352,8 +366,25 @@
         [x y] (vec+vec speed position)
         position [(mod x width) (mod y height)]]
     (assoc asteroid :direction direction
-                    :position position
-                    )))
+                    :position position)))
+
+(defmethod move :debris [{:keys [life-time direction rotation-speed position speed size] :as debris}]
+  (if (<= life-time 0)
+    nil
+    (let [direction (+ direction (* rotation-speed turn-millis 0.001))
+          [x y] (vec+vec speed position)
+          position [(mod x width) (mod y height)]
+          size (* size (- 1 (/ turn-millis life-time)))
+          life-time (- life-time turn-millis)]
+      (assoc debris :direction direction
+                      :position position
+                      :size size
+                      :life-time life-time))))
+
+(defn move-many [coll]
+  (->> coll
+       (map move)
+       (filter (comp not nil?))))
 
 ; Accelerating shots - not used right now
 #_(defmethod move :shot [{:keys [position speed direction acceleration] :as shot}]
@@ -380,7 +411,7 @@
   (dosync
     (alter ship shoot)
     (alter ship move)
-    (alter asteroids (partial map move))
+    (alter asteroids move-many)
     nil))
 
 (defn resolve-collision! [ship asteroids]
@@ -428,7 +459,11 @@
       (.fillPolygon jpolygon)))
   nil)
 
-(defmulti paint (fn [_ object] (:type object)))
+(defmulti paint (fn [_ {type :type}]
+                  (cond
+                    (= type :ship) :ship
+                    (some #{:shot} type) :fill
+                    (some #{:asteroid :debris} type) :draw)))
 
 (defmethod paint :ship [g {:keys [shape life-colors life cockpit-shape cockpit-color shots] :as ship}]
   (doseq [shot shots]
@@ -440,12 +475,12 @@
     (fill-polygon g polygon color)
     (fill-polygon g cockpit-polygon cockpit-color)))
 
-(defmethod paint :shot [g {:keys [shape color] :as object}]
+(defmethod paint :fill [g {:keys [shape color] :as object}]
   (let [transformation (get-transformation-matrix object point-size)
         polygon (polygon-to-screen shape transformation)]
     (fill-polygon g polygon color)))
 
-(defmethod paint :asteroid [g {:keys [shape color] :as object}]
+(defmethod paint :draw [g {:keys [shape color] :as object}]
   (let [transformation (get-transformation-matrix object point-size)
         polygon (polygon-to-screen shape transformation)]
     (draw-polygon g polygon color)))
