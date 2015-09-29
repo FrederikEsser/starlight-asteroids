@@ -276,7 +276,7 @@
       )))
 
 (defmulti handle-collision (fn [{type :type}]
-                             (if (some #{:ship :shot :asteroid} type)
+                             (if (#{:ship :shot :asteroid} type)
                                type
                                :other)))
 
@@ -462,8 +462,8 @@
 (defmulti paint (fn [_ {type :type}]
                   (cond
                     (= type :ship) :ship
-                    (some #{:shot} type) :fill
-                    (some #{:asteroid :debris} type) :draw)))
+                    (#{:shot} type) :fill
+                    (#{:asteroid :debris} type) :draw)))
 
 (defmethod paint :ship [g {:keys [shape life-colors life cockpit-shape cockpit-color shots] :as ship}]
   (doseq [shot shots]
