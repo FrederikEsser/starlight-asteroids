@@ -19,7 +19,8 @@
 (def point-size 8.5)
 (def ship-size 1.5)
 (def ship-life 3)
-(def turn-speed 4)
+(def ship-acceleration 1)
+(def ship-rotation-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 2.5)
 (def shot-millis 400)
@@ -34,11 +35,10 @@
 (def turn-millis 40)
 
 (def actions {
-              (int \A) {:rotation (- turn-speed)}
-              (int \D) {:rotation turn-speed}
-              (int \W) {:acceleration 1}
+              (int \A) {:rotation (- ship-rotation-speed)}
+              (int \D) {:rotation ship-rotation-speed}
+              (int \W) {:acceleration ship-acceleration}
               (int \K) {:shoot true}
-              (int \R) {:repair true}
               (int \1) {:set-level 1}
               (int \2) {:set-level 2}
               (int \3) {:set-level 3}
@@ -141,7 +141,7 @@
    :shape                  [[-0.143 1.0] [0.143 1.0] [0.429 0.429] [1.0 0.143] [1.0 -1.0] [0.429 -0.714]
                             [0.143 -1.0] [-0.143 -1.0] [-0.429 -0.714] [-1.0 -1.0] [-1.0 0.143] [-0.429 0.429]]
    :color                  (Color. 160 160 150)
-   :paint-method fill-polygon
+   :paint-method           fill-polygon
 
    :cockpit-shape          [[-0.143 0.714] [0.143 0.714] [0.286 -0.143] [-0.286 -0.143]]
    :cockpit-color          (Color. 0 0 80)
@@ -156,6 +156,7 @@
 
    :direction              0
    :rotation-speed         0
+   :rotation               #{}
 
    :life                   ship-life
    :life-colors            [(Color. 255 0 0) (Color. 255 80 75) (Color. 250 160 75) (Color. 160 160 150)]
@@ -169,7 +170,7 @@
     :size           shot-size
     :shape          [[-1.0 -5.0] [1.0 -5.0] [0.0 1.0]]
     :color          (Color. 250 50 10)
-    :paint-method fill-polygon
+    :paint-method   fill-polygon
 
     :position       pos
     :speed          speed
@@ -206,7 +207,7 @@
       :size           (vary asteroid-size-variance size)
       :shape          shape
       :color          (Color. 250 240 (if debris? 150 20))
-      :paint-method draw-polygon
+      :paint-method   draw-polygon
 
       :position       position
       :speed          speed
@@ -326,19 +327,12 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
-(defn repair-ship [ship]
-  "Repair method while input keys f*** up at start-up"
-  (assoc ship :rotation-speed 0
-              :acceleration 0
-              :shooting? false))
-
 (defn shoot [{:keys [shooting? shots millis-since-last-shot] :as ship}]
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
         shoots? (and shooting? (>= millis-since-last-shot shot-millis))
         shots (if shoots? (conj shots (create-shot ship)) shots)]
     (assoc ship :millis-since-last-shot (if shoots? 0 millis-since-last-shot)
-                :shots shots))
-  )
+                :shots shots)))
 
 (defn basic-move
   ([{:keys [direction rotation-speed speed acceleration position] :as object} wrap?]
@@ -379,16 +373,12 @@
        (map move)
        (filter (comp not nil?))))
 
-(defn turn [{:keys [rotation-speed] :as ship} rot]
-  (assoc ship :rotation-speed (+ rotation-speed rot)))
-
-(defn accelerate [{:keys [acceleration] :as ship} acc]
-  (assoc ship :acceleration (+ acceleration acc)
-              :collidable? true))
-
-(defn toggle-shooting [ship do-shoot?]
-  (assoc ship :shooting? do-shoot?
-              :collidable? true))
+(defn set-rotation [{rotation :rotation :as ship} value activate?]
+  (let [rotation (if activate?
+                   (conj rotation value)
+                   (disj rotation value))]
+    (assoc ship :rotation rotation
+                :rotation-speed (reduce + rotation))))
 
 ; ----------------------------------------------------------
 ; mutable model
@@ -407,14 +397,12 @@
       (ref-set asteroids asteroids*))))
 
 (defn do-action!
-  ([ship {:keys [rotation acceleration shoot repair] :as action} modifier]
-   (when rotation (dosync (alter ship turn (* modifier rotation))))
-   (when acceleration (dosync (alter ship accelerate (* modifier acceleration))))
-   (when shoot (dosync (alter ship toggle-shooting (> modifier 0))))
-   (when repair (dosync (alter ship repair-ship))))
+    ([ship {:keys [acceleration rotation shoot] :as action} activate?]
+   (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? true)))
+   (when rotation (dosync (alter ship set-rotation rotation activate?)))
+   (when shoot (dosync (alter ship assoc :shooting? activate? :collidable? true))))
   ([ship action]
-   (do-action! ship action 1))
-  )
+   (do-action! ship action true)))
 
 (defn reset-game! [ship asteroids level increase-level?]
   (dosync
@@ -486,7 +474,7 @@
     (keyPressed [e]
       (do-action! ship (actions (.getKeyCode e))))
     (keyReleased [e]
-      (do-action! ship (actions (.getKeyCode e)) -1))
+      (do-action! ship (actions (.getKeyCode e)) false))
     (keyTyped [e])
     (getPreferredSize []
       (Dimension. (* (inc width) point-size)
