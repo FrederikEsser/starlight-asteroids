@@ -12,7 +12,6 @@
 ; functional model
 ; ----------------------------------------------------------
 ; START: constants
-(def sqrt3 (Math/sqrt 3.0))
 
 (def width 120)
 (def height 100)
@@ -23,14 +22,16 @@
 (def ship-rotation-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 2.5)
-(def shot-millis 400)
+(def shot-millis 200)
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
 (def asteroid-min-size 1.2)
-(def asteroid-size-variance 0.2)
-(def asteroid-jaggedness 0.6)
+(def asteroid-size-variance 0.3)
+(def asteroid-jaggedness 0.7)
 (def asteroid-max-speed 0.6)
 (def asteroid-max-rotation-speed 4)
+(def fragment-number 3)
+(def fragment-size-reduction (Math/sqrt fragment-number))
 (def debris-life-millis 3000)
 (def turn-millis 40)
 
@@ -204,7 +205,7 @@
          debris? (< size asteroid-min-size)]
      {:type           (if debris? :debris :asteroid)
 
-      :size           (vary asteroid-size-variance size)
+      :size           size
       :shape          shape
       :color          (Color. 250 240 (if debris? 150 20))
       :paint-method   draw-polygon
@@ -293,9 +294,9 @@
     shot))
 
 (defmethod handle-collision :asteroid [{:keys [hit? size position speed] :as asteroid}]
-  (let [fragment-size (/ size sqrt3)]
+  (let [fragment-size (/ size fragment-size-reduction)]
     (if hit?
-      (create-asteroids 3 fragment-size position speed)
+      (create-asteroids fragment-number fragment-size position speed)
       asteroid)))
 
 (defmethod handle-collision :other [{hit? :hit? :as object}]
