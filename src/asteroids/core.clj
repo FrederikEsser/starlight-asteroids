@@ -4,7 +4,8 @@
            (java.awt.image BufferedImage PixelGrabber)
            (java.io File)
            (javax.imageio ImageIO)
-           (java.awt.event ActionListener KeyListener))
+           (java.awt.event ActionListener KeyListener)
+           (javax.sound.sampled AudioSystem FloatControl$Type))
   #_(:use examples.import-static))
 #_(import-static java.awt.event.KeyEvent VK_LEFT VK_RIGHT VK_UP VK_DOWN)
 
@@ -253,6 +254,21 @@
   ([num size pos speed] (map create-asteroid (repeat num size) (repeat num pos) (repeat num speed)))
   #_(repeat num (create-asteroid size pos speed)))
 
+(defn play-sound
+  ([sound gain]
+   (let [file (str "resources/" sound ".wav")
+         audio-stream (AudioSystem/getAudioInputStream (java.io.File. file))
+         clip (AudioSystem/getClip)
+         ;volume (.getControl clip FloatControl$Type/MASTER_GAIN)
+         ]
+     #_(doto volume
+       (.setValue gain))
+     (doto clip
+       (.open audio-stream)
+       (.setFramePosition 0)
+       (.start))))
+  ([sound] (play-sound sound 0)))
+
 (defn out-of-bounds? [{[x y] :position size :size}]
   (or
     (< x (- size))
@@ -303,12 +319,14 @@
                                :other)))
 
 (defmethod handle-collision :ship [{:keys [hit? life] :as ship}]
+  (when hit? (play-sound (if (<= (dec life) 0) "ship-destroyed" "ship-hit")))
   (if hit?
     (assoc ship :life (dec life)
                 :hit? false)
     ship))
 
 (defmethod handle-collision :shot [{:keys [hit?] :as shot}]
+  (when hit? (play-sound "asteroid-hit"))
   (if hit?
     nil
     shot))
@@ -352,6 +370,7 @@
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
         shoots? (and shooting? (>= millis-since-last-shot shot-millis))
         shots (if shoots? (conj shots (create-shot ship)) shots)]
+    (when shoots? (play-sound "shot"))
     (assoc ship :millis-since-last-shot (if shoots? 0 millis-since-last-shot)
                 :shots shots)))
 
