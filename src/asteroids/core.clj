@@ -133,7 +133,7 @@
     (map f pol))
   )
 
-(declare fill-polygon draw-polygon)
+(declare fill-polygon draw-polygon fill-circle draw-circle)
 
 (defn create-ship []
   {:type                   :ship
@@ -163,6 +163,26 @@
    :life-colors            [(Color. 255 0 0) (Color. 255 80 75) (Color. 250 160 75) (Color. 160 160 150)]
    :collidable?            false                            ; is set to true at first movement / shooting
    })
+
+(defn create-circle
+  ([pos speed]
+   {:type           :shot
+
+    :size           (* 0.5 ship-size)
+    :shape          [[-1 -1] [1 1]]
+
+    :color          (Color. 10 200 220)
+    :paint-method   fill-circle
+
+    :position       pos
+    :speed          speed
+    :acceleration   0
+
+    :direction      0
+    :rotation-speed 0
+
+    :collidable?    true
+    }))
 
 (defn create-shot
   ([pos dir speed]
@@ -431,6 +451,18 @@
     (doto graphics
       (.setColor color)
       (.fillPolygon jpolygon)))
+  nil)
+
+(defn draw-circle [graphics [[x y] [x1 y1]] color]
+  (doto graphics
+    (.setColor color)
+    (.drawOval x y (- x1 x) (- y1 y)))
+  nil)
+
+(defn fill-circle [graphics [[x y] [x1 y1]] color]
+  (doto graphics
+    (.setColor color)
+    (.fillOval x y (- x1 x) (- y1 y)))
   nil)
 
 (defmulti paint (fn [_ {type :type}]
