@@ -14,8 +14,8 @@
 ; ----------------------------------------------------------
 ; START: constants
 
-(def width 120)
-(def height 100)
+(def width 160)
+(def height 85)
 (def point-size 8.5)
 (def ship-size 1.5)
 (def ship-life 3)
@@ -23,16 +23,22 @@
 (def ship-rotation-speed 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 2.5)
-(def shot-millis 200)
+(def shot-millis 300)
+(def missile-size (/ ship-size 3))
+(def missile-speed 1)
+(def missile-acceleration 1)
+(def missile-millis 10000)
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
 (def asteroid-min-size 1.2)
-(def asteroid-size-variance 0.3)
+(def asteroid-size-variance 0.2)
 (def asteroid-jaggedness 0.7)
 (def asteroid-max-speed 0.6)
 (def asteroid-max-rotation-speed 4)
 (def fragment-number 3)
+(def crit-fragment-number 30)
 (def fragment-size-reduction (Math/sqrt fragment-number))
+(def crit-fragment-size-reduction (Math/sqrt crit-fragment-number))
 (def debris-life-millis 3000)
 (def turn-millis 40)
 
@@ -40,6 +46,7 @@
               (int \A) {:rotation (- ship-rotation-speed)}
               (int \D) {:rotation ship-rotation-speed}
               (int \W) {:acceleration ship-acceleration}
+              (int \J) {:fire-missile true}
               (int \K) {:shoot true}
               (int \1) {:set-level 1}
               (int \2) {:set-level 2}
@@ -209,6 +216,33 @@
          shot-speed (vec+vec speed (num*vec shot-speed dir-vec))]
      (create-shot shot-pos direction shot-speed))))
 
+(defn create-missile
+  ([pos dir speed]
+   {:type           :missile
+
+    :size           missile-size
+    :shape          [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
+                     [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
+    :color          (Color. 10 50 250)
+    :paint-method   fill-polygon
+
+    :position       pos
+    :speed          speed
+    :acceleration   missile-acceleration
+
+    :direction      dir
+    :rotation-speed 0
+
+    :collidable+?   true
+    })
+  ([{:keys [position size direction speed] :as ship}]
+   (let [dir-vec (rotate-vec direction [0 1])
+         missile-pos (vec+vec position (num*vec size dir-vec))
+         missile-speed (vec+vec speed (num*vec missile-speed dir-vec))]
+     (create-missile missile-pos direction missile-speed))))
+
+
+
 (defn create-asteroid
   ([size pos speed]
    (let [size (vary asteroid-size-variance size)
@@ -262,7 +296,7 @@
          ;volume (.getControl clip FloatControl$Type/MASTER_GAIN)
          ]
      #_(doto volume
-       (.setValue gain))
+         (.setValue gain))
      (doto clip
        (.open audio-stream)
        (.setFramePosition 0)
@@ -293,11 +327,15 @@
               (and (sequential? obj1) (sequential? obj2)) :seq-seq)))
 
 (defmethod check-collision :map-map [obj1 obj2]
-  (if (and (:collidable? obj1)
+  (if (and (:collidable+? obj1)
            (:collidable? obj2)
            (collide? obj1 obj2))
-    [(assoc obj1 :hit? true) (assoc obj2 :hit? true)]
-    [obj1 obj2]))
+    [(assoc obj1 :hit? true) (assoc obj2 :crit-hit? true)]
+    (if (and (:collidable? obj1)
+             (:collidable? obj2)
+             (collide? obj1 obj2))
+      [(assoc obj1 :hit? true) (assoc obj2 :hit? true)]
+      [obj1 obj2])))
 
 (defmethod check-collision :map-seq [obj1 coll]
   (loop [obj1 obj1, coll coll, coll-result []]
@@ -331,11 +369,17 @@
     nil
     shot))
 
-(defmethod handle-collision :asteroid [{:keys [hit? size position speed] :as asteroid}]
-  (let [fragment-size (/ size fragment-size-reduction)]
-    (if hit?
-      (create-asteroids fragment-number fragment-size position speed)
-      asteroid)))
+(defmethod handle-collision :missile [{:keys [hit?] :as missile}]
+  (when hit? (play-sound "asteroid-hit"))
+  (if hit?
+    nil
+    missile))
+
+(defmethod handle-collision :asteroid [{:keys [hit? crit-hit? size position speed] :as asteroid}]
+  (cond
+    crit-hit? (create-asteroids crit-fragment-number (/ size crit-fragment-size-reduction) position speed)
+    hit? (create-asteroids fragment-number (/ size fragment-size-reduction) position speed)
+    :else asteroid))
 
 (defmethod handle-collision :other [{hit? :hit? :as object}]
   (if hit?
@@ -366,12 +410,14 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
-(defn shoot [{:keys [shooting? shots millis-since-last-shot] :as ship}]
+(defn shoot [{:keys [shooting? shots millis-since-last-shot firing?] :as ship}]
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
         shoots? (and shooting? (>= millis-since-last-shot shot-millis))
-        shots (if shoots? (conj shots (create-shot ship)) shots)]
-    (when shoots? (play-sound "shot"))
-    (assoc ship :millis-since-last-shot (if shoots? 0 millis-since-last-shot)
+        shots (if shoots? (conj shots (create-shot ship)) shots)
+        fires? (and firing? (>= millis-since-last-shot shot-millis))
+        shots (if fires? (conj shots (create-missile ship)) shots)]
+    (when (or shoots? fires?) (play-sound "shot"))
+    (assoc ship :millis-since-last-shot (if (or shoots? fires?) 0 millis-since-last-shot)
                 :shots shots)))
 
 (defn basic-move
@@ -395,6 +441,9 @@
 
 (defmethod move :shot [shot]
   (basic-move shot false))
+
+(defmethod move :missile [missile]
+  (basic-move missile false))
 
 (defmethod move :asteroid [asteroid]
   (basic-move asteroid))
@@ -437,10 +486,11 @@
       (ref-set asteroids asteroids*))))
 
 (defn do-action!
-    ([ship {:keys [acceleration rotation shoot] :as action} activate?]
+  ([ship {:keys [acceleration rotation shoot fire-missile] :as action} activate?]
    (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? true)))
    (when rotation (dosync (alter ship set-rotation rotation activate?)))
-   (when shoot (dosync (alter ship assoc :shooting? activate? :collidable? true))))
+   (when shoot (dosync (alter ship assoc :shooting? activate? :collidable? true)))
+   (when fire-missile (dosync (alter ship assoc :firing? activate? :collidable? true))))
   ([ship action]
    (do-action! ship action true)))
 
