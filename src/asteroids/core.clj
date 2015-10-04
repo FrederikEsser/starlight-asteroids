@@ -296,7 +296,7 @@
         (recur (rest coll1) coll2 (conj coll1-result obj1))))))
 
 (defmulti handle-damage (fn [{type :type}]
-                             (if (#{:ship :shot :asteroid} type)
+                             (if (#{:ship :shot :missile :asteroid} type)
                                type
                                :other)))
 
@@ -308,13 +308,13 @@
     ship))
 
 (defmethod handle-damage :shot [{:keys [damage-taken] :as shot}]
-  (when damage-taken (play-sound "asteroid-hit"))
+  (when damage-taken (play-sound "shot-hit"))
   (if damage-taken
     nil
     shot))
 
 (defmethod handle-damage :missile [{:keys [damage-taken] :as missile}]
-  (when damage-taken (play-sound "asteroid-hit"))
+  (when damage-taken (play-sound "missile-hit"))
   (if damage-taken
     nil
     missile))
@@ -359,7 +359,8 @@
         shots (if shoots? (conj shots (create-shot ship)) shots)
         fires? (and firing? (>= millis-since-last-shot shot-millis))
         shots (if fires? (conj shots (create-missile ship)) shots)]
-    (when (or shoots? fires?) (play-sound "shot"))
+    (when shoots? (play-sound "shot"))
+    (when fires? (play-sound "missile"))
     (assoc ship :millis-since-last-shot (if (or shoots? fires?) 0 millis-since-last-shot)
                 :shots shots)))
 
