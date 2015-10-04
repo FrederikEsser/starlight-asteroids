@@ -23,15 +23,6 @@
 (def ship-acceleration 1)
 (def ship-rotation-speed 4)
 (def ship-damage 4)
-(def shot-size (/ ship-size 10))
-(def shot-speed 2.5)
-(def shot-damage 3)
-(def shot-millis 300)
-(def missile-size (/ ship-size 3))
-(def missile-speed 0)
-(def missile-damage 30)
-(def missile-acceleration 3)
-(def missile-millis 10000)
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
 (def asteroid-min-size 1.3)
@@ -43,6 +34,22 @@
 (def debris-life-millis 3000)
 (def turn-millis 40)
 
+(def weapons {
+              :shot    {
+                        :size         (/ ship-size 10)
+                        :speed        2.5
+                        :acceleration 0
+                        :damage       3
+                        :cooldown     300
+                        }
+              :missile {
+                        :size         (/ ship-size 3)
+                        :speed        0
+                        :acceleration 3
+                        :damage       30
+                        :cooldown     10000
+                        }})
+
 (def sqrt (memoize #(Math/sqrt %)))
 
 (def actions {
@@ -50,14 +57,7 @@
               (int \D) {:rotation ship-rotation-speed}
               (int \W) {:acceleration ship-acceleration}
               (int \J) {:fire-missile true}
-              (int \K) {:shoot true}
-              (int \1) {:set-level 1}
-              (int \2) {:set-level 2}
-              (int \3) {:set-level 3}
-              (int \4) {:set-level 4}
-              (int \5) {:set-level 5}
-              (int \6) {:set-level 6}
-              })
+              (int \K) {:shoot true}})
 
 ; END: constants
 
@@ -79,43 +79,46 @@
   )
 
 (defn polygon-to-screen [pol mat]
-  (let [f (fn [v] (->> (conj (vec v) 1)
-                       (m/mat*vec mat)
-                       (take 2)
-                       (m/round)))]
-    (map f pol))
+  (let [transform (fn [v] (->> (conj (vec v) 1)
+                               (m/mat*vec mat)
+                               (take 2)
+                               (m/round)))]
+    (map transform pol))
   )
 
 (declare fill-polygon draw-polygon fill-circle draw-circle)
 
 (defn create-ship []
-  {:type                   :ship
+  {:type                      :ship
 
-   :size                   ship-size
-   :shape                  [[-0.143 1.0] [0.143 1.0] [0.429 0.429] [1.0 0.143] [1.0 -1.0] [0.429 -0.714]
-                            [0.143 -1.0] [-0.143 -1.0] [-0.429 -0.714] [-1.0 -1.0] [-1.0 0.143] [-0.429 0.429]]
-   :color                  (Color. 160 160 150)
-   :paint-method           fill-polygon
+   :size                      ship-size
+   :shape                     [[-0.143 1.0] [0.143 1.0] [0.429 0.429] [1.0 0.143] [1.0 -1.0] [0.429 -0.714]
+                               [0.143 -1.0] [-0.143 -1.0] [-0.429 -0.714] [-1.0 -1.0] [-1.0 0.143] [-0.429 0.429]]
+   :color                     (Color. 160 160 150)
+   :paint-method              fill-polygon
 
-   :cockpit-shape          [[-0.143 0.714] [0.143 0.714] [0.286 -0.143] [-0.286 -0.143]]
-   :cockpit-color          (Color. 0 0 80)
+   :cockpit-shape             [[-0.143 0.714] [0.143 0.714] [0.286 -0.143] [-0.286 -0.143]]
+   :cockpit-color             (Color. 0 0 80)
 
-   :shots                  []
-   :shooting?              false
-   :millis-since-last-shot shot-millis
-   :millis-since-last-missile missile-millis
+   :shots                     []
+   :shooting?                 false
+   :millis-since-last-shot    0
+   :millis-since-last-missile 0
 
-   :position               [(/ width 2) (/ height 2)]
-   :speed                  [0 0]
-   :acceleration           0
+   :position                  [(/ width 2) (/ height 2)]
+   :speed                     [0 0]
+   :acceleration              0
 
-   :direction              0
-   :rotation-speed         0
-   :rotation               #{}
+   :direction                 0
+   :rotation-speed            0
+   :rotation                  #{}
 
-   :life                   ship-life
-   :life-colors            [(Color. 255 0 0) (Color. 255 80 75) (Color. 250 160 75) (Color. 160 160 150)]
-   :collidable?            false                            ; is set to ship-damage at first movement / shooting
+   :life                      ship-life
+   :life-colors               {0 (Color. 255 0 0)
+                               1 (Color. 255 80 75)
+                               2 (Color. 250 160 75)
+                               3 (Color. 160 160 150)}
+   :collidable?               false                         ; is set to ship-damage at first movement / shooting
    })
 
 (defn create-circle
@@ -142,7 +145,7 @@
   ([pos dir speed]
    {:type           :shot
 
-    :size           shot-size
+    :size           (-> weapons :shot :size)
     :shape          [[-1.0 -5.0] [1.0 -5.0] [0.0 1.0]]
     :color          (Color. 250 50 10)
     :paint-method   fill-polygon
@@ -154,19 +157,19 @@
     :direction      dir
     :rotation-speed 0
 
-    :collidable?    shot-damage
+    :collidable?    (-> weapons :shot :damage)
     })
   ([{:keys [position size direction speed] :as ship}]
    (let [dir-vec (m/rotate-vec direction [0 1])
-         shot-pos (m/vec+vec position (m/num*vec size dir-vec))
-         shot-speed (m/vec+vec speed (m/num*vec shot-speed dir-vec))]
-     (create-shot shot-pos direction shot-speed))))
+         shot-position (m/vec+vec position (m/num*vec size dir-vec))
+         shot-speed (m/vec+vec speed (m/num*vec (-> weapons :shot :speed) dir-vec))]
+     (create-shot shot-position direction shot-speed))))
 
 (defn create-missile
   ([pos dir speed]
    {:type           :missile
 
-    :size           missile-size
+    :size           (-> weapons :missile :size)
     :shape          [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
                      [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
     :color          (Color. 10 50 250)
@@ -174,18 +177,18 @@
 
     :position       pos
     :speed          speed
-    :acceleration   missile-acceleration
+    :acceleration   (-> weapons :missile :acceleration)
 
     :direction      dir
     :rotation-speed 0
 
-    :collidable?   missile-damage
+    :collidable?    (-> weapons :missile :damage)
     })
   ([{:keys [position size direction speed] :as ship}]
    (let [dir-vec (m/rotate-vec direction [0 1])
-         missile-pos (m/vec+vec position (m/num*vec size dir-vec))
-         missile-speed (m/vec+vec speed (m/num*vec missile-speed dir-vec))]
-     (create-missile missile-pos direction missile-speed))))
+         missile-position (m/vec+vec position (m/num*vec size dir-vec))
+         missile-speed (m/vec+vec speed (m/num*vec (-> weapons :missile :speed) dir-vec))]
+     (create-missile missile-position direction missile-speed))))
 
 
 
@@ -297,9 +300,9 @@
         (recur (rest coll1) coll2 (conj coll1-result obj1))))))
 
 (defmulti handle-damage (fn [{type :type}]
-                             (if (#{:ship :shot :missile :asteroid} type)
-                               type
-                               :other)))
+                          (if (#{:ship :shot :missile :asteroid} type)
+                            type
+                            :other)))
 
 (defmethod handle-damage :ship [{:keys [damage-taken life] :as ship}]
   (when damage-taken (play-sound (if (<= life damage-taken) "ship-destroyed" "ship-hit")))
@@ -357,9 +360,9 @@
 (defn shoot [{:keys [shots shooting? millis-since-last-shot firing? millis-since-last-missile] :as ship}]
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
         millis-since-last-missile (+ turn-millis millis-since-last-missile)
-        shoots? (and shooting? (>= millis-since-last-shot shot-millis))
+        shoots? (and shooting? (>= millis-since-last-shot (-> weapons :shot :cooldown)))
         shots (if shoots? (conj shots (create-shot ship)) shots)
-        fires? (and firing? (>= millis-since-last-missile missile-millis))
+        fires? (and firing? (>= millis-since-last-missile (-> weapons :missile :cooldown)))
         shots (if fires? (conj shots (create-missile ship)) shots)]
     (when shoots? (play-sound "shot"))
     (when fires? (play-sound "missile"))
@@ -377,12 +380,12 @@
                    :position (if wrap? [(mod x width) (mod y height)] [x y]))))
   ([object] (basic-move object true)))
 
-(defmulti move (fn [object] (:type object)))
+(defmulti move :type)
 
 (defmethod move :ship [{shots :shots :as ship}]
   (let [ship (basic-move ship)
         shots (->> shots
-                   (filter #(not (out-of-bounds? %)))
+                   (filter (comp not out-of-bounds?))
                    (map move))]
     (assoc ship :shots shots)))
 
