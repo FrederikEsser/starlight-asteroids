@@ -103,6 +103,7 @@
    :shots                  []
    :shooting?              false
    :millis-since-last-shot shot-millis
+   :millis-since-last-missile missile-millis
 
    :position               [(/ width 2) (/ height 2)]
    :speed                  [0 0]
@@ -353,15 +354,17 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
-(defn shoot [{:keys [shooting? shots millis-since-last-shot firing?] :as ship}]
+(defn shoot [{:keys [shots shooting? millis-since-last-shot firing? millis-since-last-missile] :as ship}]
   (let [millis-since-last-shot (+ turn-millis millis-since-last-shot)
+        millis-since-last-missile (+ turn-millis millis-since-last-missile)
         shoots? (and shooting? (>= millis-since-last-shot shot-millis))
         shots (if shoots? (conj shots (create-shot ship)) shots)
-        fires? (and firing? (>= millis-since-last-shot shot-millis))
+        fires? (and firing? (>= millis-since-last-missile missile-millis))
         shots (if fires? (conj shots (create-missile ship)) shots)]
     (when shoots? (play-sound "shot"))
     (when fires? (play-sound "missile"))
-    (assoc ship :millis-since-last-shot (if (or shoots? fires?) 0 millis-since-last-shot)
+    (assoc ship :millis-since-last-shot (if shoots? 0 millis-since-last-shot)
+                :millis-since-last-missile (if fires? 0 millis-since-last-missile)
                 :shots shots)))
 
 (defn basic-move
