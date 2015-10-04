@@ -6,6 +6,7 @@
            (javax.imageio ImageIO)
            (java.awt.event ActionListener KeyListener)
            (javax.sound.sampled AudioSystem FloatControl$Type))
+  (:require [asteroids.matrix-math :as m])
   #_(:use examples.import-static))
 #_(import-static java.awt.event.KeyEvent VK_LEFT VK_RIGHT VK_UP VK_DOWN)
 
@@ -67,77 +68,19 @@
         to (* n (+ 1 variance))]
     (random from to)))
 
-; transformation math:
-
-(defn invert [mat]
-  (apply map vector mat))
-
-(defn mat*vec [m v]
-  (let [vec*vec (fn [& vs] (reduce + (apply map * vs)))]
-    (map #(vec*vec % v) m)))
-
-(defn mat*mat [m1 m2]
-  (invert (map (partial mat*vec m1) (invert m2))))
-
-(defn rot [x]
-  (let [cos-x (Math/cos x)
-        sin-x (Math/sin x)]
-    [[cos-x (- sin-x) 0]
-     [sin-x cos-x 0]
-     [0 0 1]]))
-
-(defn trans [x y]
-  [[1 0 x]
-   [0 1 y]
-   [0 0 1]])
-
-(defn scl [s]
-  [[s 0 0]
-   [0 s 0]
-   [0 0 1]])
-
-(defn transpose-vec [x y v]
-  (mat*vec (trans x y) v))
-
-(defn rotate-vec [a v]
-  (->> (conj v 1)
-       (mat*vec (rot a))
-       (take 2)))
-
-(defn scale-vec [s v]
-  (mat*vec (scl s) v))
-
-(defn transpose-mat [x y m]
-  (mat*mat (trans x y) m))
-
-(defn rotate-mat [a m]
-  (mat*mat (rot a) m))
-
-(defn scale-mat [s m]
-  (mat*mat (scl s) m))
-
-(defn round [v]
-  (map (fn [x] (if (integer? x) x (Math/round x))) v))
-
-(defn vec+vec [& vs]
-  (apply map + vs))
-
-(defn num*vec [n v]
-  (map (partial * n) v))
-
 (defn get-transformation-matrix [{:keys [size position direction]} scale]
   (let [[x y] position]
-    (->> (scl size)
-         (rotate-mat direction)
-         (transpose-mat x y)
-         (scale-mat scale)))
+    (->> (m/scale size)
+         (m/rotate-mat direction)
+         (m/transpose-mat x y)
+         (m/scale-mat scale)))
   )
 
 (defn polygon-to-screen [pol mat]
   (let [f (fn [v] (->> (conj (vec v) 1)
-                       (mat*vec mat)
+                       (m/mat*vec mat)
                        (take 2)
-                       (round)))]
+                       (m/round)))]
     (map f pol))
   )
 
@@ -211,9 +154,9 @@
     :collidable?    true
     })
   ([{:keys [position size direction speed] :as ship}]
-   (let [dir-vec (rotate-vec direction [0 1])
-         shot-pos (vec+vec position (num*vec size dir-vec))
-         shot-speed (vec+vec speed (num*vec shot-speed dir-vec))]
+   (let [dir-vec (m/rotate-vec direction [0 1])
+         shot-pos (m/vec+vec position (m/num*vec size dir-vec))
+         shot-speed (m/vec+vec speed (m/num*vec shot-speed dir-vec))]
      (create-shot shot-pos direction shot-speed))))
 
 (defn create-missile
@@ -236,9 +179,9 @@
     :collidable+?   true
     })
   ([{:keys [position size direction speed] :as ship}]
-   (let [dir-vec (rotate-vec direction [0 1])
-         missile-pos (vec+vec position (num*vec size dir-vec))
-         missile-speed (vec+vec speed (num*vec missile-speed dir-vec))]
+   (let [dir-vec (m/rotate-vec direction [0 1])
+         missile-pos (m/vec+vec position (m/num*vec size dir-vec))
+         missile-speed (m/vec+vec speed (m/num*vec missile-speed dir-vec))]
      (create-missile missile-pos direction missile-speed))))
 
 
@@ -247,15 +190,15 @@
   ([size pos speed]
    (let [size (vary asteroid-size-variance size)
          direction (rand (* 2 (Math/PI)))
-         dir-vec (rotate-vec direction [0 1])
-         speed (vec+vec speed (num*vec (rand asteroid-max-speed) dir-vec))
-         position (vec+vec pos (num*vec size dir-vec))
+         dir-vec (m/rotate-vec direction [0 1])
+         speed (m/vec+vec speed (m/num*vec (rand asteroid-max-speed) dir-vec))
+         position (m/vec+vec pos (m/num*vec size dir-vec))
          rotation-speed (rand asteroid-max-rotation-speed)
          num-points (Math/round (+ size 3.0))
          make-point (fn [n]
                       (let [angle (* 2 (Math/PI) (/ n num-points))
                             length (random (- 1 asteroid-jaggedness) (+ 1 (/ asteroid-jaggedness 2)))]
-                        (rotate-vec angle [0 length])))
+                        (m/rotate-vec angle [0 length])))
          shape (map make-point (range num-points))
          debris? (< size asteroid-min-size)]
      {:type           (if debris? :debris :asteroid)
@@ -423,8 +366,8 @@
 (defn basic-move
   ([{:keys [direction rotation-speed speed acceleration position] :as object} wrap?]
    (let [direction (+ direction (* rotation-speed turn-millis 0.001))
-         speed (vec+vec speed (rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
-         [x y] (vec+vec speed position)]
+         speed (m/vec+vec speed (m/rotate-vec direction [0 (* acceleration turn-millis 0.001)]))
+         [x y] (m/vec+vec speed position)]
      (assoc object :direction direction
                    :speed speed
                    :position (if wrap? [(mod x width) (mod y height)] [x y]))))
