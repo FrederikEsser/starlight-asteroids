@@ -22,26 +22,28 @@
 (def ship-life 3)
 (def ship-acceleration 1)
 (def ship-rotation-speed 4)
+(def ship-damage 4)
 (def shot-size (/ ship-size 10))
 (def shot-speed 2.5)
+(def shot-damage 3)
 (def shot-millis 300)
 (def missile-size (/ ship-size 3))
-(def missile-speed 1)
-(def missile-acceleration 1)
+(def missile-speed 0)
+(def missile-damage 30)
+(def missile-acceleration 3)
 (def missile-millis 10000)
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
-(def asteroid-min-size 1.2)
-(def asteroid-size-variance 0.2)
+(def asteroid-min-size 1.3)
+(def asteroid-size-variance 0.1)
 (def asteroid-jaggedness 0.7)
 (def asteroid-max-speed 0.6)
 (def asteroid-max-rotation-speed 4)
-(def fragment-number 3)
-(def crit-fragment-number 30)
-(def fragment-size-reduction (Math/sqrt fragment-number))
-(def crit-fragment-size-reduction (Math/sqrt crit-fragment-number))
+(def asteroid-damage 1)
 (def debris-life-millis 3000)
 (def turn-millis 40)
+
+(def sqrt (memoize #(Math/sqrt %)))
 
 (def actions {
               (int \A) {:rotation (- ship-rotation-speed)}
@@ -112,7 +114,7 @@
 
    :life                   ship-life
    :life-colors            [(Color. 255 0 0) (Color. 255 80 75) (Color. 250 160 75) (Color. 160 160 150)]
-   :collidable?            false                            ; is set to true at first movement / shooting
+   :collidable?            false                            ; is set to ship-damage at first movement / shooting
    })
 
 (defn create-circle
@@ -132,7 +134,7 @@
     :direction      0
     :rotation-speed 0
 
-    :collidable?    true
+    :collidable?    'whatever
     }))
 
 (defn create-shot
@@ -151,7 +153,7 @@
     :direction      dir
     :rotation-speed 0
 
-    :collidable?    true
+    :collidable?    shot-damage
     })
   ([{:keys [position size direction speed] :as ship}]
    (let [dir-vec (m/rotate-vec direction [0 1])
@@ -176,7 +178,7 @@
     :direction      dir
     :rotation-speed 0
 
-    :collidable+?   true
+    :collidable?   missile-damage
     })
   ([{:keys [position size direction speed] :as ship}]
    (let [dir-vec (m/rotate-vec direction [0 1])
@@ -215,7 +217,7 @@
       :direction      direction
       :rotation-speed rotation-speed
 
-      :collidable?    (not debris?)
+      :collidable?    (if debris? false asteroid-damage)
 
       :life-time      (if debris? debris-life-millis nil)
       }))
@@ -262,6 +264,9 @@
         square #(* % %)]
     (<= (+ (square delta-x) (square delta-y)) (square size))))
 
+(defn damage [{current-damage :damage-taken :as obj} damage-amount]
+  (assoc obj :damage-taken (if current-damage (+ current-damage damage-amount) damage-amount)))
+
 (defmulti check-collision
           (fn [obj1 obj2]
             (cond
@@ -270,15 +275,11 @@
               (and (sequential? obj1) (sequential? obj2)) :seq-seq)))
 
 (defmethod check-collision :map-map [obj1 obj2]
-  (if (and (:collidable+? obj1)
+  (if (and (:collidable? obj1)
            (:collidable? obj2)
            (collide? obj1 obj2))
-    [(assoc obj1 :hit? true) (assoc obj2 :crit-hit? true)]
-    (if (and (:collidable? obj1)
-             (:collidable? obj2)
-             (collide? obj1 obj2))
-      [(assoc obj1 :hit? true) (assoc obj2 :hit? true)]
-      [obj1 obj2])))
+    [(damage obj1 (:collidable? obj2)) (damage obj2 (:collidable? obj1))]
+    [obj1 obj2]))
 
 (defmethod check-collision :map-seq [obj1 coll]
   (loop [obj1 obj1, coll coll, coll-result []]
@@ -294,51 +295,50 @@
       (let [[obj1 coll2] (check-collision (first coll1) coll2)]
         (recur (rest coll1) coll2 (conj coll1-result obj1))))))
 
-(defmulti handle-collision (fn [{type :type}]
+(defmulti handle-damage (fn [{type :type}]
                              (if (#{:ship :shot :asteroid} type)
                                type
                                :other)))
 
-(defmethod handle-collision :ship [{:keys [hit? life] :as ship}]
-  (when hit? (play-sound (if (<= (dec life) 0) "ship-destroyed" "ship-hit")))
-  (if hit?
-    (assoc ship :life (dec life)
-                :hit? false)
+(defmethod handle-damage :ship [{:keys [damage-taken life] :as ship}]
+  (when damage-taken (play-sound (if (<= life damage-taken) "ship-destroyed" "ship-hit")))
+  (if damage-taken
+    (assoc ship :life (- life damage-taken)
+                :damage-taken nil)
     ship))
 
-(defmethod handle-collision :shot [{:keys [hit?] :as shot}]
-  (when hit? (play-sound "asteroid-hit"))
-  (if hit?
+(defmethod handle-damage :shot [{:keys [damage-taken] :as shot}]
+  (when damage-taken (play-sound "asteroid-hit"))
+  (if damage-taken
     nil
     shot))
 
-(defmethod handle-collision :missile [{:keys [hit?] :as missile}]
-  (when hit? (play-sound "asteroid-hit"))
-  (if hit?
+(defmethod handle-damage :missile [{:keys [damage-taken] :as missile}]
+  (when damage-taken (play-sound "asteroid-hit"))
+  (if damage-taken
     nil
     missile))
 
-(defmethod handle-collision :asteroid [{:keys [hit? crit-hit? size position speed] :as asteroid}]
-  (cond
-    crit-hit? (create-asteroids crit-fragment-number (/ size crit-fragment-size-reduction) position speed)
-    hit? (create-asteroids fragment-number (/ size fragment-size-reduction) position speed)
-    :else asteroid))
+(defmethod handle-damage :asteroid [{:keys [damage-taken size position speed] :as asteroid}]
+  (if damage-taken
+    (create-asteroids damage-taken (/ size (sqrt damage-taken)) position speed)
+    asteroid))
 
-(defmethod handle-collision :other [{hit? :hit? :as object}]
-  (if hit?
+(defmethod handle-damage :other [{damage-taken :damage-taken :as object}]
+  (if damage-taken
     nil
     object))
 
 (defn resolve-all-collision [{shots :shots :as ship} asteroids]
   (let [[ship asteroids] (check-collision ship asteroids)
         [shots asteroids] (check-collision shots asteroids)
-        ship (handle-collision ship)
+        ship (handle-damage ship)
         shots (->> shots
-                   (map handle-collision)
+                   (map handle-damage)
                    flatten
                    (filter (comp not nil?)))
         asteroids (->> asteroids
-                       (map handle-collision)
+                       (map handle-damage)
                        flatten
                        (filter (comp not nil?)))]
     [(assoc ship :shots shots) asteroids]))
@@ -430,10 +430,10 @@
 
 (defn do-action!
   ([ship {:keys [acceleration rotation shoot fire-missile] :as action} activate?]
-   (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? true)))
+   (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? ship-damage)))
    (when rotation (dosync (alter ship set-rotation rotation activate?)))
-   (when shoot (dosync (alter ship assoc :shooting? activate? :collidable? true)))
-   (when fire-missile (dosync (alter ship assoc :firing? activate? :collidable? true))))
+   (when shoot (dosync (alter ship assoc :shooting? activate? :collidable? ship-damage)))
+   (when fire-missile (dosync (alter ship assoc :firing? activate? :collidable? ship-damage))))
   ([ship action]
    (do-action! ship action true)))
 
