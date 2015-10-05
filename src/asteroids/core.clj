@@ -18,11 +18,14 @@
 (def width 160)
 (def height 85)
 (def point-size 8.5)
+(def turn-millis 40)
+
 (def ship-size 1.5)
 (def ship-life 3)
 (def ship-acceleration 1)
 (def ship-rotation-speed 4)
 (def ship-damage 4)
+
 (def asteroids-start-number 1)
 (def asteroid-start-size 5)
 (def asteroid-min-size 1.3)
@@ -32,25 +35,17 @@
 (def asteroid-max-rotation-speed 4)
 (def asteroid-damage 1)
 (def debris-life-millis 3000)
-(def turn-millis 40)
 
-(def ammunition-types {
-                       :projectile {
-                                    :size         (/ ship-size 10)
+(def ammunition-types {:projectile {:size         (/ ship-size 10)
                                     :speed        2.5
                                     :acceleration 0
                                     :damage       3
-                                    :cooldown     300
-                                    }
-                       :missile    {
-                                    :size         (/ ship-size 3)
+                                    :cooldown     300}
+                       :missile    {:size         (/ ship-size 3)
                                     :speed        0
                                     :acceleration 3
                                     :damage       30
-                                    :cooldown     10000
-                                    }})
-
-(def sqrt (memoize #(Math/sqrt %)))
+                                    :cooldown     10000}})
 
 (def actions {
               (int \A) {:rotation (- ship-rotation-speed)}
@@ -60,6 +55,8 @@
               (int \K) {:shoot true}})
 
 ; END: constants
+
+(def sqrt (memoize #(Math/sqrt %)))
 
 (defn random [from to]
   (let [range (- to from)]
