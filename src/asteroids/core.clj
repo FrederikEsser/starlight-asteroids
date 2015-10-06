@@ -14,9 +14,9 @@
 ; functional model
 ; ----------------------------------------------------------
 
-(def width 160)
-(def height 85)
-(def point-size 8.5)
+(def width 120)
+(def height 60)
+(def point-size 12)
 (def turn-millis 40)
 
 (def ship-size 1.5)
@@ -73,18 +73,32 @@
                                     :color        (Color. 10 50 250)
                                     :speed        0
                                     :acceleration 3
-                                    :damage       30
-                                    :cooldown     10000
+                                    :damage       15
+                                    :cooldown     5000
                                     :explosion    {:size      30
                                                    :color     (Color. 230 230 250)
-                                                   :life-time 200}}})
+                                                   :life-time 200}}
+                       :bomb       {:size         (/ ship-size 3)
+                                    :shape        [[-1.0 -1.0] [0.0 -1.5] [1.0 -1.0] [1.1 1.0] [0.0 1.5] [-1.0 1.0]]
+                                    :color        (Color. 50 250 10)
+                                    :speed        0.8
+                                    :acceleration 0
+                                    :damage       1
+                                    :cooldown     10000
+                                    :explosion    {:size      20
+                                                   :color     (Color. 180 220 180)
+                                                   :life-time 250
+                                                   :damage    2}}
+                       })
 
 (def actions {
               (int \A) {:rotation (- ship-rotation-speed)}
               (int \D) {:rotation ship-rotation-speed}
               (int \W) {:acceleration ship-acceleration}
               (int \J) {:fire-weapon :launcher}
+              (int \L) {:fire-weapon :bomber}
               (int \K) {:fire-weapon :machinegun}})
+
 
 (def sqrt (memoize #(Math/sqrt %)))
 
@@ -125,7 +139,8 @@
 
    :weapons        {:engine     (create-weapon :fire)
                     :machinegun (create-weapon :projectile)
-                    :launcher   (create-weapon :missile)}
+                    :launcher   (create-weapon :missile)
+                    :bomber     (create-weapon :bomb)}
    :shots          []
 
    :position       [(/ width 2) (/ height 2)]
@@ -310,7 +325,7 @@
 
 (defmulti handle-damage (fn [{type :type}]
                           (cond
-                            (#{:projectile :missile} type) :shot
+                            (#{:projectile :missile :bomb} type) :shot
                             (#{:ship :asteroid} type) type
                             :else :other)))
 
@@ -402,6 +417,9 @@
 
 (defmethod move :projectile [projectile]
   (basic-move projectile false))
+
+(defmethod move :bomb [bomb]
+  (basic-move bomb false))
 
 (defmethod move :missile [missile]
   (basic-move missile false))
