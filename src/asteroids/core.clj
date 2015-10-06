@@ -7,13 +7,12 @@
            (java.awt.event ActionListener KeyListener)
            (javax.sound.sampled AudioSystem FloatControl$Type))
   (:require [asteroids.matrix-math :as m])
-  #_(:use examples.import-static))
+  (:use clojure.java.io))
 #_(import-static java.awt.event.KeyEvent VK_LEFT VK_RIGHT VK_UP VK_DOWN)
 
 ; ----------------------------------------------------------
 ; functional model
 ; ----------------------------------------------------------
-; START: constants
 
 (def width 160)
 (def height 85)
@@ -35,6 +34,19 @@
 (def asteroid-max-rotation-speed 4)
 (def asteroid-damage 1)
 (def debris-life-millis 3000)
+
+(defn random-int [from to]
+  (let [range (- to from)]
+    (+ from (rand-int range))))
+
+(defn random [from to]
+  (let [range (- to from)]
+    (+ from (rand range))))
+
+(defn vary [variance n]
+  (let [from (* n (- 1 variance))
+        to (* n (+ 1 variance))]
+    (random from to)))
 
 (def ammunition-types {:projectile {:size         (/ ship-size 10)
                                     :shape        [[-1.0 -5.0] [1.0 -5.0] [0.0 1.0]]
@@ -65,18 +77,7 @@
               (int \J) {:fire-weapon :launcher}
               (int \K) {:fire-weapon :machinegun}})
 
-; END: constants
-
 (def sqrt (memoize #(Math/sqrt %)))
-
-(defn random [from to]
-  (let [range (- to from)]
-    (+ from (rand range))))
-
-(defn vary [variance n]
-  (let [from (* n (- 1 variance))
-        to (* n (+ 1 variance))]
-    (random from to)))
 
 (defn get-transformation-matrix [{:keys [size position direction]} scale]
   (let [[x y] position]
@@ -133,26 +134,37 @@
    :collidable?    false                                    ; is set to ship-damage at first movement / shooting
    })
 
-(defn create-shot [ammunition-type {:keys [position size direction speed] :as ship}]
-  (let [dir-vec (m/rotate-vec direction [0 1])
-        position (m/vec+vec position (m/num*vec size dir-vec))
-        speed (m/vec+vec speed (m/num*vec (-> ammunition-types ammunition-type :speed) dir-vec))
-        ammunition (get ammunition-types ammunition-type)]
-    {:type           ammunition-type
+(defn get-expr-value
+  ([expr default]
+   (cond
+     (nil? expr) default
+     (fn? expr) (expr)
+     :else expr))
+  ([expr] (get-expr-value expr nil)))
 
-     :size           (:size ammunition)
-     :shape          (:shape ammunition)
-     :color          (:color ammunition)
-     :paint-method   fill-polygon
+(defn create-shot ([ammunition-type {ship-pos :position ship-size :size ship-dir :direction ship-speed :speed}]
+   (let [{:keys [spread size shape color acceleration direction rotation-speed damage life-time]} (get ammunition-types ammunition-type)
+         move-dir (if spread (+ ship-dir (random (- spread) spread)) ship-dir)
+         dir-vec (m/rotate-vec move-dir [0 1])
+         position (m/vec+vec ship-pos (m/num*vec ship-size dir-vec))
+         speed (m/vec+vec ship-speed (m/num*vec (-> ammunition-types ammunition-type :speed) dir-vec))]
+     {:type           ammunition-type
 
-     :position       position
-     :speed          speed
-     :acceleration   (:acceleration ammunition)
+      :size           (get-expr-value size)
+      :shape          (get-expr-value shape)
+      :color          (get-expr-value color)
+      :paint-method   fill-polygon
 
-     :direction      direction
-     :rotation-speed 0
+      :position       position
+      :speed          speed
+      :acceleration   (get-expr-value acceleration 0)
 
-     :collidable?    (:damage ammunition)}))
+      :direction      (get-expr-value direction move-dir)
+      :rotation-speed (get-expr-value rotation-speed 0)
+
+      :collidable?    (get-expr-value damage)
+
+      :life-time      (get-expr-value life-time)})))
 
 (defn create-explosion [position {:keys [size color life-time damage] :as explosion}]
   (if explosion
@@ -224,17 +236,19 @@
 
 (defn play-sound
   ([sound gain]
-   (let [file (str "resources/" sound ".wav")
-         audio-stream (AudioSystem/getAudioInputStream (java.io.File. file))
-         clip (AudioSystem/getClip)
-         ;volume (.getControl clip FloatControl$Type/MASTER_GAIN)
-         ]
-     #_(doto volume
-         (.setValue gain))
-     (doto clip
-       (.open audio-stream)
-       (.setFramePosition 0)
-       (.start))))
+   (let [file (str "resources/" sound ".wav")]
+     (when (.exists (as-file file))
+       (let [audio-stream (AudioSystem/getAudioInputStream (File. file))
+             clip (AudioSystem/getClip)
+             ;volume (.getControl clip FloatControl$Type/MASTER_GAIN)
+             ]
+         #_(doto volume
+             (.setValue gain))
+         (doto clip
+           (.open audio-stream)
+           (.setFramePosition 0)
+           (.start))
+         ))))
   ([sound] (play-sound sound 0)))
 
 (defn out-of-bounds? [{[x y] :position size :size}]
@@ -386,7 +400,7 @@
   (basic-move asteroid))
 
 (defmethod move :debris [{:keys [life-time size] :as debris}]
-  (if (<= life-time 0)
+  (if (< life-time turn-millis)
     nil
     (let [debris (basic-move debris)
           size (* size (- 1 (/ turn-millis life-time)))
