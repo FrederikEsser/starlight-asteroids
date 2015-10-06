@@ -58,6 +58,15 @@
                                     :explosion    {:size      3
                                                    :color     (Color. 220 180 180)
                                                    :life-time 400}}
+                       :fire       {:size           (/ ship-size 2.5)
+                                    :shape          [[-1.0 -1.0] [1.0 -1.0] [0.0 1.0]]
+                                    :color          (fn [] (Color. (random-int 230 256) (random-int 60 220) (random-int 0 50)))
+                                    :spread         0.2
+                                    :speed          -0.7
+                                    :acceleration   0
+                                    :rotation-speed (fn [] (random -5 5))
+                                    :cooldown       30
+                                    :life-time      400}
                        :missile    {:size         (/ ship-size 3)
                                     :shape        [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
                                                    [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
@@ -114,7 +123,8 @@
    :cockpit-shape  [[-0.143 0.714] [0.143 0.714] [0.286 -0.143] [-0.286 -0.143]]
    :cockpit-color  (Color. 0 0 80)
 
-   :weapons        {:machinegun (create-weapon :projectile)
+   :weapons        {:engine     (create-weapon :fire)
+                    :machinegun (create-weapon :projectile)
                     :launcher   (create-weapon :missile)}
    :shots          []
 
@@ -396,6 +406,16 @@
 (defmethod move :missile [missile]
   (basic-move missile false))
 
+(defmethod move :fire [{:keys [life-time color] :as fire}]
+  (if (< life-time turn-millis)
+    nil
+    (let [fire (basic-move fire false)
+          alpha (int (* (.getAlpha color) (- 1 (/ turn-millis life-time))))
+          color (Color. (.getRed color) (.getGreen color) (.getBlue color) alpha)
+          life-time (- life-time turn-millis)]
+      (assoc fire :life-time life-time
+                  :color color))))
+
 (defmethod move :asteroid [asteroid]
   (basic-move asteroid))
 
@@ -450,7 +470,8 @@
 
 (defn do-action!
   ([ship {:keys [acceleration rotation fire-weapon] :as action} activate?]
-   (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? ship-damage)))
+   (when acceleration (dosync (alter ship assoc :acceleration (if activate? acceleration 0) :collidable? ship-damage)
+                              (alter ship toggle-shooting :engine activate?)))
    (when rotation (dosync (alter ship set-rotation rotation activate?)))
    (when fire-weapon (dosync (alter ship toggle-shooting fire-weapon activate?))))
   ([ship action]
