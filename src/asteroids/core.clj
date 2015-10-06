@@ -42,15 +42,21 @@
                                     :speed        2.5
                                     :acceleration 0
                                     :damage       3
-                                    :cooldown     300}
+                                    :cooldown     300
+                                    :explosion    {:size      3
+                                                   :color     (Color. 220 180 180)
+                                                   :life-time 400}}
                        :missile    {:size         (/ ship-size 3)
-                                    :shape          [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
-                                                     [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
-                                    :color          (Color. 10 50 250)
+                                    :shape        [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
+                                                   [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
+                                    :color        (Color. 10 50 250)
                                     :speed        0
                                     :acceleration 3
                                     :damage       30
-                                    :cooldown     10000}})
+                                    :cooldown     10000
+                                    :explosion    {:size      30
+                                                   :color     (Color. 230 230 250)
+                                                   :life-time 200}}})
 
 (def actions {
               (int \A) {:rotation (- ship-rotation-speed)}
@@ -127,26 +133,6 @@
    :collidable?    false                                    ; is set to ship-damage at first movement / shooting
    })
 
-(defn create-circle
-  ([pos speed]
-   {:type           :projectile
-
-    :size           (* 0.5 ship-size)
-    :shape          [[-1 -1] [1 1]]
-
-    :color          (Color. 10 200 220)
-    :paint-method   fill-circle
-
-    :position       pos
-    :speed          speed
-    :acceleration   0
-
-    :direction      0
-    :rotation-speed 0
-
-    :collidable?    'whatever
-    }))
-
 (defn create-shot [ammunition-type {:keys [position size direction speed] :as ship}]
   (let [dir-vec (m/rotate-vec direction [0 1])
         position (m/vec+vec position (m/num*vec size dir-vec))
@@ -167,6 +153,29 @@
      :rotation-speed 0
 
      :collidable?    (:damage ammunition)}))
+
+(defn create-explosion [position {:keys [size color life-time damage] :as explosion}]
+  (if explosion
+    {:type           :explosion
+
+     :size           size
+     :shape          [[-1 -1] [1 1]]
+
+     :color          color
+     :paint-method   fill-circle
+
+     :position       position
+     :speed          [0 0]
+     :acceleration   0
+
+     :direction      0
+     :rotation-speed 0
+
+     :collidable?    damage
+
+     :life-time      life-time
+     }
+    nil))
 
 (defn create-asteroid
   ([size pos speed]
@@ -276,9 +285,10 @@
         (recur (rest coll1) coll2 (conj coll1-result obj1))))))
 
 (defmulti handle-damage (fn [{type :type}]
-                          (if (#{:ship :projectile :missile :asteroid} type)
-                            type
-                            :other)))
+                          (cond
+                            (#{:projectile :missile} type) :shot
+                            (#{:ship :asteroid} type) type
+                            :else :other)))
 
 (defmethod handle-damage :ship [{:keys [damage-taken life] :as ship}]
   (when damage-taken (play-sound (if (<= life damage-taken) "ship-destroyed" "ship-hit")))
@@ -287,27 +297,19 @@
                 :damage-taken nil)
     ship))
 
-(defmethod handle-damage :projectile [{:keys [damage-taken] :as projectile}]
-  (when damage-taken (play-sound "projectile-hit"))
+(defmethod handle-damage :shot [{:keys [type damage-taken position] :as shot}]
+  (when damage-taken (play-sound (str (name type) "-hit")))
   (if damage-taken
-    nil
-    projectile))
-
-(defmethod handle-damage :missile [{:keys [damage-taken] :as missile}]
-  (when damage-taken (play-sound "missile-hit"))
-  (if damage-taken
-    nil
-    missile))
+    (create-explosion position (-> ammunition-types type :explosion))
+    shot))
 
 (defmethod handle-damage :asteroid [{:keys [damage-taken size position speed] :as asteroid}]
   (if damage-taken
     (create-asteroids damage-taken (/ size (sqrt damage-taken)) position speed)
     asteroid))
 
-(defmethod handle-damage :other [{damage-taken :damage-taken :as object}]
-  (if damage-taken
-    nil
-    object))
+(defmethod handle-damage :other [object]
+  object)
 
 (defn resolve-all-collision [{shots :shots :as ship} asteroids]
   (let [[ship asteroids] (check-collision ship asteroids)
@@ -370,7 +372,8 @@
   (let [ship (basic-move ship)
         shots (->> shots
                    (filter (comp not out-of-bounds?))
-                   (map move))]
+                   (map move)
+                   (filter (comp not nil?)))]
     (assoc ship :shots shots)))
 
 (defmethod move :projectile [projectile]
@@ -390,6 +393,18 @@
           life-time (- life-time turn-millis)]
       (assoc debris :size size
                     :life-time life-time))))
+
+(defmethod move :explosion [{:keys [life-time size color] :as explosion}]
+  (if (< life-time turn-millis)
+    nil
+    (let [explosion (basic-move explosion)
+          size (* size (- 1 (/ turn-millis life-time)))
+          alpha (int (* (.getAlpha color) (- 1 (/ turn-millis life-time))))
+          color (Color. (.getRed color) (.getGreen color) (.getBlue color) alpha)
+          life-time (- life-time turn-millis)]
+      (assoc explosion :size size
+                       :life-time life-time
+                       :color color))))
 
 (defn move-many [coll]
   (->> coll
@@ -493,9 +508,9 @@
   (proxy [JPanel ActionListener KeyListener] []
     (paintComponent [g]                                     ; <label id="code.game-panel.paintComponent"/>
       (proxy-super paintComponent g)
-      (paint g @ship)
       (doseq [asteroid @asteroids]
-        (paint g asteroid)))
+        (paint g asteroid))
+      (paint g @ship))
     (actionPerformed [e]                                    ; <label id="code.game-panel.actionPerformed"/>
       (update-positions! ship asteroids)
       (resolve-collision! ship asteroids)
