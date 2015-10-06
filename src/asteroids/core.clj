@@ -167,29 +167,29 @@
      :else expr))
   ([expr] (get-expr-value expr nil)))
 
-(defn create-shot ([ammunition-type {ship-pos :position ship-size :size ship-dir :direction ship-speed :speed}]
-   (let [{:keys [spread size shape color acceleration direction rotation-speed damage life-time]} (get ammunition-types ammunition-type)
-         move-dir (if spread (+ ship-dir (random (- spread) spread)) ship-dir)
-         dir-vec (m/rotate-vec move-dir [0 1])
-         position (m/vec+vec ship-pos (m/num*vec ship-size dir-vec))
-         speed (m/vec+vec ship-speed (m/num*vec (-> ammunition-types ammunition-type :speed) dir-vec))]
-     {:type           ammunition-type
+(defn create-shot [ammunition-type {ship-pos :position ship-size :size ship-dir :direction ship-speed :speed}]
+  (let [{:keys [spread size shape color acceleration direction rotation-speed damage life-time]} (get ammunition-types ammunition-type)
+        move-dir (if spread (+ ship-dir (random (- spread) spread)) ship-dir)
+        dir-vec (m/rotate-vec move-dir [0 1])
+        position (m/vec+vec ship-pos (m/num*vec ship-size dir-vec))
+        speed (m/vec+vec ship-speed (m/num*vec (-> ammunition-types ammunition-type :speed) dir-vec))]
+    {:type           ammunition-type
 
-      :size           (get-expr-value size)
-      :shape          (get-expr-value shape)
-      :color          (get-expr-value color)
-      :paint-method   fill-polygon
+     :size           (get-expr-value size)
+     :shape          (get-expr-value shape)
+     :color          (get-expr-value color)
+     :paint-method   fill-polygon
 
-      :position       position
-      :speed          speed
-      :acceleration   (get-expr-value acceleration 0)
+     :position       position
+     :speed          speed
+     :acceleration   (get-expr-value acceleration 0)
 
-      :direction      (get-expr-value direction move-dir)
-      :rotation-speed (get-expr-value rotation-speed 0)
+     :direction      (get-expr-value direction move-dir)
+     :rotation-speed (get-expr-value rotation-speed 0)
 
-      :collidable?    (get-expr-value damage)
+     :collidable?    (get-expr-value damage)
 
-      :life-time      (get-expr-value life-time)})))
+     :life-time      (get-expr-value life-time)}))
 
 (defn create-explosion [position {:keys [size color life-time damage] :as explosion}]
   (if explosion
