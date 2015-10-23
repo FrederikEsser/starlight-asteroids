@@ -1,9 +1,9 @@
 (ns asteroids.interop)
 
-(defn play-sound
-  ([sound gain]
-   nil)                                                     ; todo: real impl
-  ([sound] (play-sound sound 0)))
+(defn play-sound [sound]
+  (let [file (str "sounds/" sound ".wav")]
+    (let [audio (js/Audio. file)]
+      (.play audio))))
 
 ; ----------------------------------------------------------
 ; gui

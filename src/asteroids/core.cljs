@@ -22,9 +22,9 @@
 
 (defn time-loop [_]
   (when (:running @app-state)
-    (c/time-tick!)
     (when (c/lose? @c/game-state) (js/alert "You lose!") (c/reset-game! false))
     (when (c/win? @c/game-state) (js/alert "You win!") (c/reset-game! true))
+    (c/time-tick!)
     (repaint (:context @app-state))
     (go
       (<! (timeout c/turn-millis))

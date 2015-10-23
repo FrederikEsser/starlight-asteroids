@@ -6,7 +6,7 @@
 
 (defn play-sound
   ([sound gain]
-   (let [file (str "resources/" sound ".wav")]
+   (let [file (str "resources/public/sounds/" sound ".wav")]
      (when (.exists (as-file file))
        (let [audio-stream (AudioSystem/getAudioInputStream (File. file))
              clip (AudioSystem/getClip)
