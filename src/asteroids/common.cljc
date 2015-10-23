@@ -40,19 +40,25 @@
         to (* n (+ 1 variance))]
     (random from to)))
 
+(defn new-color 
+  ([r g b a]
+    {:r r :g g :b b :a a})
+  ([r g b]
+   (new-color r g b 255)))
+
 (def ammunition-types {:projectile {:size         (/ ship-size 10)
                                     :shape        [[-1.0 -5.0] [1.0 -5.0] [0.0 1.0]]
-                                    :color        (i/new-color 250 50 10)
+                                    :color        (new-color 250 50 10)
                                     :speed        2.5
                                     :acceleration 0
                                     :damage       3
                                     :cooldown     300
                                     :explosion    {:size      3
-                                                   :color     (i/new-color 220 180 180)
+                                                   :color     (new-color 220 180 180)
                                                    :life-time 400}}
                        :fire       {:size           (/ ship-size 2.5)
                                     :shape          [[-1.0 -1.0] [1.0 -1.0] [0.0 1.0]]
-                                    :color          #(i/new-color (random-int 230 256) (random-int 60 220) (random-int 0 50))
+                                    :color          #(new-color (random-int 230 256) (random-int 60 220) (random-int 0 50))
                                     :spread         0.2
                                     :speed          #(random -0.8 -0.5)
                                     :acceleration   0
@@ -62,23 +68,23 @@
                        :missile    {:size         (/ ship-size 3)
                                     :shape        [[0.0 1.0] [0.5 -1.0] [0.5 -3.5] [1.0 -4.5] [0.5 -4.5] [0.25 -4.25]
                                                    [-0.25 -4.25] [-0.5 -4.5] [-1.0 -4.5] [-0.5 -3.5] [-0.5 -1.0]]
-                                    :color        (i/new-color 10 50 250)
+                                    :color        (new-color 10 50 250)
                                     :speed        0
                                     :acceleration 3
                                     :damage       15
                                     :cooldown     8000
                                     :explosion    {:size      30
-                                                   :color     (i/new-color 220 220 250)
+                                                   :color     (new-color 220 220 250)
                                                    :life-time 200}}
                        :bomb       {:size         (/ ship-size 3)
                                     :shape        [[-1.0 -1.0] [0.0 -1.5] [1.0 -1.0] [1.1 1.0] [0.0 1.5] [-1.0 1.0]]
-                                    :color        (i/new-color 10 250 50)
+                                    :color        (new-color 10 250 50)
                                     :speed        0.8
                                     :acceleration 0
                                     :damage       1
                                     :cooldown     5000
                                     :explosion    {:size      20
-                                                   :color     (i/new-color 180 220 180)
+                                                   :color     (new-color 180 220 180)
                                                    :life-time 160
                                                    :damage    3}}
                        })
@@ -120,11 +126,11 @@
    :size           ship-size
    :shape          [[-0.143 1.0] [0.143 1.0] [0.429 0.429] [1.0 0.143] [1.0 -1.0] [0.429 -0.714]
                     [0.143 -1.0] [-0.143 -1.0] [-0.429 -0.714] [-1.0 -1.0] [-1.0 0.143] [-0.429 0.429]]
-   :color          (i/new-color 160 160 150)
+   :color          (new-color 160 160 150)
    :paint-method   i/fill-polygon
 
    :cockpit-shape  [[-0.143 0.714] [0.143 0.714] [0.286 -0.143] [-0.286 -0.143]]
-   :cockpit-color  (i/new-color 0 0 80)
+   :cockpit-color  (new-color 0 0 80)
 
    :weapons        {:engine     (create-weapon :fire)
                     :machinegun (create-weapon :projectile)
@@ -141,10 +147,10 @@
    :rotation       #{}
 
    :life           ship-life
-   :life-colors    {0 (i/new-color 255 0 0)
-                    1 (i/new-color 255 80 75)
-                    2 (i/new-color 250 160 75)
-                    3 (i/new-color 160 160 150)}
+   :life-colors    {0 (new-color 255 0 0)
+                    1 (new-color 255 80 75)
+                    2 (new-color 250 160 75)
+                    3 (new-color 160 160 150)}
    :collidable?    false                                    ; is set to ship-damage at first movement / shooting
    })
 
@@ -207,14 +213,14 @@
 (defn create-asteroid
   ([size pos velocity]
    (let [size (vary asteroid-size-variance size)
-         direction (rand (* 2 (Math/PI)))
+         direction (rand (* 2 Math/PI))
          dir-vec (m/rotate-vec direction [0 1])
          velocity (m/vec+vec velocity (m/num*vec (rand asteroid-max-speed) dir-vec))
          position (m/vec+vec pos (m/num*vec size dir-vec))
          rotation-speed (rand asteroid-max-rotation-speed)
          num-points (Math/round (+ size 3.0))
          make-point (fn [n]
-                      (let [angle (* 2 (Math/PI) (/ n num-points))
+                      (let [angle (* 2 Math/PI (/ n num-points))
                             length (random (- 1 asteroid-jaggedness) (+ 1 (/ asteroid-jaggedness 2)))]
                         (m/rotate-vec angle [0 length])))
          shape (map make-point (range num-points))
@@ -223,7 +229,7 @@
 
       :size           size
       :shape          shape
-      :color          (i/new-color 250 240 (if debris? 150 20))
+      :color          (new-color 250 240 (if debris? 150 20))
       :paint-method   i/draw-polygon
 
       :position       position
@@ -374,8 +380,8 @@
   (if (< life-time turn-millis)
     nil
     (let [fire (basic-move fire false)
-          alpha (* (i/get-alpha color) (- 1 (/ turn-millis life-time)))
-          color (i/new-color color alpha)
+          alpha (* (:a color) (- 1 (/ turn-millis life-time)))
+          color (assoc color :a alpha)
           life-time (- life-time turn-millis)]
       (assoc fire :life-time life-time
                   :color color))))
@@ -397,8 +403,8 @@
     nil
     (let [explosion (basic-move explosion)
           size (* size (- 1 (/ turn-millis life-time)))
-          alpha (* (i/get-alpha color) (- 1 (/ turn-millis life-time)))
-          color (i/new-color color alpha)
+          alpha (* (:a color) (- 1 (/ turn-millis life-time)))
+          color (assoc color :a alpha)
           life-time (- life-time turn-millis)]
       (assoc explosion :size size
                        :life-time life-time

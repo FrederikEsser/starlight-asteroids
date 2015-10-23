@@ -4,17 +4,6 @@
            (javax.sound.sampled AudioSystem FloatControl$Type))
   (:use clojure.java.io))
 
-(defn new-color
-  ([r g b]
-   (Color. r g b))
-  ([r g b a]
-   (Color. r g b (int a)))
-  ([color alpha]
-   (new-color (.getRed color) (.getGreen color) (.getBlue color) alpha)))
-
-(defn get-alpha [color]
-  (.getAlpha color))
-
 (defn play-sound
   ([sound gain]
    (let [file (str "resources/" sound ".wav")]
@@ -36,11 +25,14 @@
 ; gui
 ; ----------------------------------------------------------
 
+(defn- java-color [{:keys [r g b a]}]
+  (Color. r g b (int a)))
+
 (defn draw-polygon [graphics polygon color]
   (let [jpolygon (new Polygon)]
     (doseq [[x y] polygon] (. jpolygon (addPoint x y)))
     (doto graphics
-      (.setColor color)
+      (.setColor (java-color color))
       (.drawPolygon jpolygon)))
   nil)
 
@@ -48,19 +40,19 @@
   (let [jpolygon (new Polygon)]
     (doseq [[x y] polygon] (. jpolygon (addPoint x y)))
     (doto graphics
-      (.setColor color)
+      (.setColor (java-color color))
       (.fillPolygon jpolygon)))
   nil)
 
 (defn draw-circle [graphics [[x y] [x1 y1]] color]
   (doto graphics
-    (.setColor color)
+    (.setColor (java-color color))
     (.drawOval x y (- x1 x) (- y1 y)))
   nil)
 
 (defn fill-circle [graphics [[x y] [x1 y1]] color]
   (doto graphics
-    (.setColor color)
+    (.setColor (java-color color))
     (.fillOval x y (- x1 x) (- y1 y)))
   nil)
 

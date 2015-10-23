@@ -3,8 +3,7 @@
            (javax.swing JPanel JFrame Timer JOptionPane JFileChooser)
            (java.awt.event ActionListener KeyListener)
            )
-  (:require [asteroids.common :as c]
-            [asteroids.interop :as i])
+  (:require [asteroids.common :as c])
   (:use clojure.java.io))
 
 ; ----------------------------------------------------------
@@ -41,7 +40,7 @@
     (doto panel                                             ; <label id="code.game.panel"/>
       (.setFocusable true)
       (.addKeyListener panel)
-      (.setBackground (i/new-color 0 0 0)))
+      (.setBackground (Color. 0 0 0)))
     (doto frame                                             ; <label id="code.game.frame"/>
       (.add panel)
       (.pack)
