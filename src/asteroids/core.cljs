@@ -11,6 +11,8 @@
 
 (defonce app-state (atom {}))
 
+(def border-size 20)
+
 (defn repaint [graphics]
   (let [canvas (.-canvas graphics)
         width (.-width canvas)
@@ -53,17 +55,30 @@
 (defn on-key-up [e]
   (c/do-action! (c/actions (char (.-keyCode e))) false))
 
+(defn max-width []
+  (- (.-innerWidth js/window) border-size))
+
+(defn max-height []
+  (- (.-innerHeight js/window) border-size))
+
+(defn resize-canvas [e]
+  (let [canvas (.-canvas (:context @app-state))
+        [width height] (c/resize-game! (max-width) (max-height))]
+    (set! (.-width canvas) width)
+    (set! (.-height canvas) height)))
+
 (defn init []
   (let [canvas (.createElement js/document "canvas")
-        context (.getContext canvas "2d")]
-    (set! (.-width canvas) (* (inc c/width) c/point-size))
-    (set! (.-height canvas) (* (inc c/height) c/point-size))
+        context (.getContext canvas "2d")
+        [width height] (c/resize-game! (max-width) (max-height))]
+    (set! (.-width canvas) width)
+    (set! (.-height canvas) height)
     (set! (.. canvas -style -background) "rgb(0,0,0)")
     (set! (.-onkeydown js/document) on-key-down)
     (set! (.-onkeyup js/document) on-key-up)
+    (set! (.-onresize js/window) resize-canvas)
     (.appendChild (.-body js/document) canvas)
-    (swap! app-state assoc
-           :context context))
+    (swap! app-state assoc :context context))
   (start))
 
 (when-not (:context @app-state)

@@ -30,8 +30,8 @@
       (c/do-action! (c/actions (char (.getKeyCode e))) false))
     (keyTyped [e])
     (getPreferredSize []
-      (Dimension. (* (inc c/width) c/point-size)
-                  (* (inc c/height) c/point-size)))))
+      (let [[width height] (c/resize-game! 1000 800)]
+        (Dimension. width height)))))
 
 (defn game []
   (let [frame (JFrame. "Asteroids")

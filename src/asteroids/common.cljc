@@ -6,14 +6,13 @@
 ; functional model
 ; ----------------------------------------------------------
 
-(def width 120)
-(def height 60)
-(def point-size 12)
+(def width 80)
+(def height 50)
 (def turn-millis 40)
 
-(def ship-size 1.5)
+(def ship-size 1)
 (def ship-life 3)
-(def ship-acceleration 1)
+(def ship-acceleration 0.7)
 (def ship-rotation-speed 4)
 (def ship-damage 4)
 
@@ -40,9 +39,9 @@
         to (* n (+ 1 variance))]
     (random from to)))
 
-(defn new-color 
+(defn new-color
   ([r g b a]
-    {:r r :g g :b b :a a})
+   {:r r :g g :b b :a a})
   ([r g b]
    (new-color r g b 255)))
 
@@ -100,20 +99,6 @@
 
 
 (def sqrt (memoize #(Math/sqrt %)))
-
-(defn get-transformation-matrix [{:keys [size position direction]} scale]
-  (let [[x y] position]
-    (->> (m/scale size)
-         (m/rotate-mat direction)
-         (m/transpose-mat x y)
-         (m/scale-mat scale))))
-
-(defn polygon-to-screen [pol mat]
-  (let [transform (fn [v] (->> (conj (vec v) 1)
-                               (m/mat*vec mat)
-                               (take 2)
-                               (m/round)))]
-    (map transform pol)))
 
 (defn create-weapon [ammunition-type]
   {:ammunition-type ammunition-type
@@ -334,10 +319,13 @@
 ; Actions
 ; ----------------------------------------------------------------------
 
-(defn reset-game [level]
-  {:ship      (create-ship)
-   :asteroids (create-asteroids level asteroid-start-size)
-   :level     level})
+(defn reset-game
+  ([level]
+    (reset-game {} level))
+  ([state level]
+   (assoc state :ship (create-ship)
+                :asteroids (create-asteroids level asteroid-start-size)
+                :level level)))
 
 (defn fire-weapon [{:keys [shots] :as ship}
                    [weapon-type {:keys [ammunition-type cooldown shooting?]}]]
@@ -468,7 +456,7 @@
 
 (defn reset-game! [increase-level?]
   (let [level (:level @game-state)]
-    (reset! game-state (reset-game (if increase-level? (inc level) level)))))
+    (reset! game-state (reset-game @game-state (if increase-level? (inc level) level)))))
 
 (defn time-tick! []
   (swap! game-state time-tick))
@@ -481,16 +469,35 @@
   ([action]
    (do-action! action true)))
 
+(defn resize-game! [w h]
+  (let [scale (min (/ w width) (/ h height))]
+    (swap! game-state assoc :scale scale)
+    [(* scale width) (* scale height)]))
+
 ; ----------------------------------------------------------
 ; gui
 ; ----------------------------------------------------------
+
+(defn get-transformation-matrix [{:keys [size position direction]}]
+  (let [[x y] position]
+    (->> (m/scale size)
+         (m/rotate-mat direction)
+         (m/transpose-mat x y)
+         (m/scale-mat (:scale @game-state)))))
+
+(defn polygon-to-screen [pol mat]
+  (let [transform (fn [v] (->> (conj (vec v) 1)
+                               (m/mat*vec mat)
+                               (take 2)
+                               (m/round)))]
+    (map transform pol)))
 
 (defmulti paint (fn [_ {type :type}] type))
 
 (defmethod paint :ship [g {:keys [shape life-colors life cockpit-shape cockpit-color shots paint-method] :as ship}]
   (doseq [shot shots]
     (paint g shot))
-  (let [transformation (get-transformation-matrix ship point-size)
+  (let [transformation (get-transformation-matrix ship)
         polygon (polygon-to-screen shape transformation)
         color (get life-colors life)
         cockpit-polygon (polygon-to-screen cockpit-shape transformation)]
@@ -498,7 +505,7 @@
     (paint-method g cockpit-polygon cockpit-color)))
 
 (defmethod paint :default [g {:keys [shape color paint-method] :as object}]
-  (let [transformation (get-transformation-matrix object point-size)
+  (let [transformation (get-transformation-matrix object)
         polygon (polygon-to-screen shape transformation)]
     (paint-method g polygon color)))
 
